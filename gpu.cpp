@@ -41,6 +41,10 @@ static inline void gpu_draw(
     const uint32_t draw_id
 );
 
+static inline bool is_backface(OutVertex *triangle);
+
+static inline void rasterize(Frame &frame, OutVertex *triangle);
+
 //! [gpu_execute]
 void gpu_execute(GPUMemory &mem, CommandBuffer &cb) {
     uint32_t draw_id = UINT32_MAX;
@@ -160,31 +164,22 @@ static inline void gpu_draw(
             } else {
                 in_vertex.gl_VertexID = i - j;
             }
+
+            // run the vertex shader
             at.set_attrib(in_vertex.gl_VertexID, in_vertex.attributes);
             prog.vertexShader(triangle[2 - j], in_vertex, si);
+
+            // perspective division
+            triangle[2 - j].gl_Position /= triangle[2 - j].gl_Position.w;
         }
 
-        // skip triangles if culling is enabled
+        // skip backface triangles if culling is enabled
         if constexpr(flags & DRAW_CULLING) {
-            // |x0 y0 1|
-            // |x1 y1 1| < 0 => clockwise
-            // |x2 y2 1|
-            //     ||
-            // x0*y1 + x1*y2 + x2*y0 < y0*x1 + y1*x2 + y2*x0 => clockwise
-
-            auto a = // x0*y1 + x1*y2 + x2*y0
-                triangle[0].gl_Position.x * triangle[1].gl_Position.y +
-                triangle[1].gl_Position.x * triangle[2].gl_Position.y +
-                triangle[2].gl_Position.x * triangle[0].gl_Position.y;
-            auto b = // y0*x1 + y1*x2 + y2*x0
-                triangle[0].gl_Position.y * triangle[1].gl_Position.x +
-                triangle[1].gl_Position.y * triangle[2].gl_Position.x +
-                triangle[2].gl_Position.y * triangle[0].gl_Position.x;
-
-            // skip the triangle if it is clockwise
-            if (a <= b)
+            if (is_backface(triangle))
                 continue;
         }
+
+        rasterize(mem.framebuffer, triangle);
     }
 }
 
@@ -209,7 +204,6 @@ inline ExtAttrib::ExtAttrib(
     }
 }
 
-
 inline void ExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
     for (size_t j = 0; j < cnt; ++j) {
         std::copy_n(
@@ -218,6 +212,42 @@ inline void ExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
             reinterpret_cast<char *>(&out_attribs[ind[j]])
         );
     }
+}
+
+static inline bool is_backface(OutVertex *triangle) {
+    // |x0 y0 1|
+    // |x1 y1 1| < 0 => clockwise => backface
+    // |x2 y2 1|
+    //     ||
+    // x0*y1 + x1*y2 + x2*y0 < y0*x1 + y1*x2 + y2*x0 => clockwise
+
+    auto a = // x0*y1 + x1*y2 + x2*y0
+        triangle[0].gl_Position.x * triangle[1].gl_Position.y +
+        triangle[1].gl_Position.x * triangle[2].gl_Position.y +
+        triangle[2].gl_Position.x * triangle[0].gl_Position.y;
+    auto b = // y0*x1 + y1*x2 + y2*x0
+        triangle[0].gl_Position.y * triangle[1].gl_Position.x +
+        triangle[1].gl_Position.y * triangle[2].gl_Position.x +
+        triangle[2].gl_Position.y * triangle[0].gl_Position.x;
+
+    return a <= b;
+}
+
+static inline void rasterize(Frame &frame, OutVertex *triangle) {
+    // names for more readable code
+    auto p0 = triangle[0].gl_Position;
+    auto p1 = triangle[1].gl_Position;
+    auto p2 = triangle[2].gl_Position;
+
+    // viewport transform
+    p0.x = (p0.x + 1) * frame.width / 2;
+    p0.y = (p0.y + 1) * frame.height / 2;
+    p1.x = (p1.x + 1) * frame.width / 2;
+    p1.y = (p1.y + 1) * frame.height / 2;
+    p2.x = (p2.x + 1) * frame.width / 2;
+    p2.y = (p2.y + 1) * frame.height / 2;
+
+    // TODO: rasterization
 }
 
 /**
