@@ -35,7 +35,7 @@ static inline void gpu_draw(
 );
 
 template<typename type, int flags>
-static inline void gpu_draw(
+static void gpu_draw(
     GPUMemory &mem,
     const DrawCommand &cmd,
     const uint32_t draw_id
@@ -121,7 +121,7 @@ static inline void gpu_draw(
 // use template for the draw function to avoid duplicate code but don't
 // sacriface performance, flags indicate the compile-time features to turn on
 template<typename type, int flags>
-static inline void gpu_draw(
+static void gpu_draw(
     GPUMemory &mem,
     const DrawCommand &cmd,
     const uint32_t draw_id
