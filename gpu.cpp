@@ -9,7 +9,29 @@
 #include <algorithm>
 
 static inline void gpu_clear(GPUMemory &mem, const ClearCommand &cmd);
-static inline void gpu_draw(GPUMemory &mem, const DrawCommand &cmd, uint32_t draw_id);
+
+static inline void gpu_draw(
+    GPUMemory &mem,
+    const DrawCommand &cmd,
+    uint32_t draw_id
+);
+
+template<typename type, bool use_indexer>
+static inline void gpu_draw(
+    GPUMemory &mem,
+    const DrawCommand &cmd,
+    const uint32_t draw_id
+);
+
+static inline size_t extract_attributes(
+    size_t *attrib_indexes,
+    size_t *attrib_sizes,
+    size_t *attrib_strides,
+    const char **attrib_arrays,
+    const VertexAttrib *attributes,
+    const uint32_t max_attrib,
+    const Buffer *buffers
+);
 
 //! [gpu_execute]
 void gpu_execute(GPUMemory &mem, CommandBuffer &cb) {
@@ -54,14 +76,38 @@ static inline void gpu_clear(GPUMemory &mem, const ClearCommand &cmd) {
     }
 }
 
+// wrapper for the template funciton
+static inline void gpu_draw(
+    GPUMemory &mem,
+    const DrawCommand &cmd,
+    const uint32_t draw_id
+) {
+    if (cmd.vao.indexBufferID < 0) {
+        gpu_draw<void, false>(mem, cmd, draw_id);
+        return;
+    }
+
+    switch (cmd.vao.indexType) {
+    case IndexType::UINT8:
+        gpu_draw<uint8_t, true>(mem, cmd, draw_id);
+        return;
+    case IndexType::UINT16:
+        gpu_draw<uint16_t, true>(mem, cmd, draw_id);
+        return;
+    case IndexType::UINT32:
+        gpu_draw<uint32_t, true>(mem, cmd, draw_id);
+        return;
+    }
+}
+
 // use template for the draw function to avoid duplicate code but don't
 // sacriface performance
 template<typename type, bool use_indexer>
 static inline void gpu_draw(
     GPUMemory &mem,
     const DrawCommand &cmd,
-    const uint32_t draw_id)
-{
+    const uint32_t draw_id
+) {
     const Program &prog = mem.programs[cmd.programID];
 
     InVertex in_vertex{
@@ -84,26 +130,15 @@ static inline void gpu_draw(
     }
 
     // attributes
-    size_t at_cnt = 0;
-    size_t at_ind[maxAttributes] = { 0 };
-    size_t at_siz[maxAttributes] = { 0 };
-    size_t at_str[maxAttributes] = { 0 };
-    const char *at_arr[maxAttributes] = { NULL };
+    size_t at_ind[maxAttributes];
+    size_t at_siz[maxAttributes];
+    size_t at_str[maxAttributes];
+    const char *at_arr[maxAttributes];
 
-    for (size_t i = 0; i < maxAttributes; ++i) {
-        if (cmd.vao.vertexAttrib[i].type == AttributeType::EMPTY)
-            continue;
-
-        // filter out unused attributes
-        at_ind[at_cnt] = i;
-        at_siz[at_cnt] =
-            static_cast<size_t>(cmd.vao.vertexAttrib[i].type) % 8 * 4;
-        at_str[at_cnt] = cmd.vao.vertexAttrib[i].stride;
-        at_arr[at_cnt] = reinterpret_cast<const char *>(
-            mem.buffers[cmd.vao.vertexAttrib[i].bufferID].data
-        ) + cmd.vao.vertexAttrib[i].offset;
-        ++at_cnt;
-    }
+    size_t at_cnt = extract_attributes(
+        at_ind, at_siz, at_str, at_arr,
+        cmd.vao.vertexAttrib, maxAttributes, mem.buffers
+    );
 
     for (size_t i = 0; i < cmd.nofVertices; ++i) {
         OutVertex out_vertex;
@@ -128,28 +163,34 @@ static inline void gpu_draw(
     }
 }
 
-// wrapper for the template funciton
-static inline void gpu_draw(
-    GPUMemory &mem,
-    const DrawCommand &cmd,
-    const uint32_t draw_id)
-{
-    if (cmd.vao.indexBufferID < 0) {
-        gpu_draw<void, false>(mem, cmd, draw_id);
-        return;
+static inline size_t extract_attributes(
+    size_t *attrib_indexes,
+    size_t *attrib_sizes,
+    size_t *attrib_strides,
+    const char **attrib_arrays,
+    const VertexAttrib *attributes,
+    const uint32_t max_attrib,
+    const Buffer *buffers
+) {
+    size_t attrib_count = 0;
+
+    for (size_t i = 0; i < max_attrib; ++i) {
+        // filter out unused attributes
+        if (attributes[i].type == AttributeType::EMPTY)
+            continue;
+
+        attrib_indexes[attrib_count] = i;
+        attrib_sizes[attrib_count] =
+            static_cast<size_t>(attributes[i].type) % 8 * 4;
+
+        attrib_strides[attrib_count] = attributes[i].stride;
+        attrib_arrays[attrib_count] = reinterpret_cast<const char *>(
+            buffers[attributes[i].bufferID].data
+        ) + attributes[i].offset;
+        ++attrib_count;
     }
 
-    switch (cmd.vao.indexType) {
-    case IndexType::UINT8:
-        gpu_draw<uint8_t, true>(mem, cmd, draw_id);
-        return;
-    case IndexType::UINT16:
-        gpu_draw<uint16_t, true>(mem, cmd, draw_id);
-        return;
-    case IndexType::UINT32:
-        gpu_draw<uint32_t, true>(mem, cmd, draw_id);
-        return;
-    }
+    return attrib_count;
 }
 
 /**
