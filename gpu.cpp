@@ -26,14 +26,22 @@ struct ExtAttrib {
 #define DRAW_INDEXER 0x1
 #define DRAW_CULLING 0x2
 
+// clears the color/depth buffer based on the command
 static inline void gpu_clear(GPUMemory &mem, const ClearCommand &cmd);
 
+// draws triangles based on the command (wrapper for the other gpu_draw)
 static inline void gpu_draw(
     GPUMemory &mem,
     const DrawCommand &cmd,
     uint32_t draw_id
 );
 
+/**
+ * @brief template fro drawing
+ *
+ * @param index type when using indexer
+ * @param flags used to enable some features (indexer culling)
+ */
 template<typename type, int flags>
 static void gpu_draw(
     GPUMemory &mem,
@@ -41,8 +49,10 @@ static void gpu_draw(
     const uint32_t draw_id
 );
 
+// determines whether the triangle is not facing the camera
 static inline bool is_backface(OutVertex *triangle);
 
+// rasterizes the given triangle (ndc coordinates) on the frame
 static inline void rasterize(Frame &frame, OutVertex *triangle);
 
 //! [gpu_execute]
@@ -79,6 +89,7 @@ static inline void gpu_clear(GPUMemory &mem, const ClearCommand &cmd) {
             *reinterpret_cast<const uint32_t *>(comp)
         );
     }
+
     if (cmd.clearDepth) {
         std::fill_n(
             mem.framebuffer.depth,
