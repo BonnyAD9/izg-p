@@ -6,6 +6,7 @@
  */
 
 #include <student/gpu.hpp>
+#include <algorithm>
 
 static inline void gpu_clear(GPUMemory &mem, const ClearCommand &cmd);
 static inline void gpu_draw(GPUMemory &mem, const DrawCommand &cmd, uint32_t draw_id);
@@ -82,6 +83,28 @@ static inline void gpu_draw(
         );
     }
 
+    // attributes
+    size_t at_cnt = 0;
+    size_t at_ind[maxAttributes] = { 0 };
+    size_t at_siz[maxAttributes] = { 0 };
+    size_t at_str[maxAttributes] = { 0 };
+    const char *at_arr[maxAttributes] = { NULL };
+
+    for (size_t i = 0; i < maxAttributes; ++i) {
+        if (cmd.vao.vertexAttrib[i].type == AttributeType::EMPTY)
+            continue;
+
+        // filter out unused attributes
+        at_ind[at_cnt] = i;
+        at_siz[at_cnt] =
+            static_cast<size_t>(cmd.vao.vertexAttrib[i].type) % 8 * 4;
+        at_str[at_cnt] = cmd.vao.vertexAttrib[i].stride;
+        at_arr[at_cnt] = reinterpret_cast<const char *>(
+            mem.buffers[cmd.vao.vertexAttrib[i].bufferID].data
+        ) + cmd.vao.vertexAttrib[i].offset;
+        ++at_cnt;
+    }
+
     for (size_t i = 0; i < cmd.nofVertices; ++i) {
         OutVertex out_vertex;
 
@@ -90,6 +113,15 @@ static inline void gpu_draw(
             in_vertex.gl_VertexID = indexer[i];
         } else {
             in_vertex.gl_VertexID = i;
+        }
+
+        // set the attributes
+        for (size_t j = 0; j < at_cnt; ++j) {
+            std::copy_n(
+                at_arr[j] + (in_vertex.gl_VertexID * at_str[j]),
+                at_siz[j],
+                reinterpret_cast<char *>(&in_vertex.attributes[at_ind[j]])
+            );
         }
 
         prog.vertexShader(out_vertex, in_vertex, si);
