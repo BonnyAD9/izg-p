@@ -144,7 +144,7 @@ static inline void gpu_draw(
             reinterpret_cast<const char *>(
                 mem.buffers[cmd.vao.indexBufferID].data
             ) + cmd.vao.indexOffset
-        );
+        ) - 1;
     }
 
     // extract attributes
@@ -160,7 +160,7 @@ static inline void gpu_draw(
         for (size_t j = 2; j != SIZE_MAX; --j) {
             // set the index based on whether to use indexer
             if constexpr(flags & DRAW_INDEXER) {
-                in_vertex.gl_VertexID = indexer[i - j];
+                in_vertex.gl_VertexID = *++indexer;
             } else {
                 in_vertex.gl_VertexID = i - j;
             }
