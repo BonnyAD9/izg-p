@@ -181,11 +181,10 @@ static void gpu_draw(
         // j starts at 2 to ensure that the vertices are processed in order
         for (size_t j = 2; j != SIZE_MAX; --j) {
             // set the index based on whether to use indexer
-            if constexpr(flags & DRAW_INDEXER) {
+            if constexpr(flags & DRAW_INDEXER)
                 in_vertex.gl_VertexID = *++indexer;
-            } else {
+            else
                 in_vertex.gl_VertexID = i - j;
-            }
 
             // run the vertex shader
             at.set_attrib(in_vertex.gl_VertexID, in_vertex.attributes);
@@ -285,7 +284,7 @@ glm::vec4 read_texture(Texture const &texture, glm::vec2 uv) {
         return glm::vec4(0.f);
 
     auto uv1 = glm::fract(uv);
-    auto uv2 = uv1*glm::vec2(texture.width-1, texture.height - 1) + 0.5f;
+    auto uv2 = uv1 * glm::vec2(texture.width - 1, texture.height - 1) + 0.5f;
     auto pix = glm::uvec2(uv2);
     //auto t   = glm::fract(uv2);
     glm::vec4 color = glm::vec4(0.f, 0.f, 0.f, 1.f);
