@@ -95,7 +95,9 @@ static inline void gpu_draw(
     const uint32_t draw_id
 ) {
     if (cmd.vao.indexBufferID < 0) {
-        gpu_draw<void, 0>(mem, cmd, draw_id);
+        cmd.backfaceCulling
+            ? gpu_draw<void, DRAW_CULLING>(mem, cmd, draw_id)
+            : gpu_draw<void, 0>(mem, cmd, draw_id);
         return;
     }
 
