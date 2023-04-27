@@ -104,18 +104,27 @@ static inline void gpu_draw(
     switch (cmd.vao.indexType) {
     case IndexType::UINT8:
         cmd.backfaceCulling
-            ? gpu_draw<uint8_t, DRAW_INDEXER | DRAW_CULLING>(mem, cmd, draw_id)
-            : gpu_draw<uint8_t, DRAW_INDEXER>(mem, cmd, draw_id);
+            ? gpu_draw<uint8_t, DRAW_INDEXER | DRAW_CULLING>(
+                mem,
+                cmd,
+                draw_id
+            ) : gpu_draw<uint8_t, DRAW_INDEXER>(mem, cmd, draw_id);
         return;
     case IndexType::UINT16:
         cmd.backfaceCulling
-            ? gpu_draw<uint16_t, DRAW_INDEXER | DRAW_CULLING>(mem, cmd, draw_id)
-            : gpu_draw<uint16_t, DRAW_INDEXER>(mem, cmd, draw_id);
+            ? gpu_draw<uint16_t, DRAW_INDEXER | DRAW_CULLING>(
+                mem,
+                cmd,
+                draw_id
+            ) : gpu_draw<uint16_t, DRAW_INDEXER>(mem, cmd, draw_id);
         return;
     case IndexType::UINT32:
         cmd.backfaceCulling
-            ? gpu_draw<uint32_t, DRAW_INDEXER | DRAW_CULLING>(mem, cmd, draw_id)
-            : gpu_draw<uint32_t, DRAW_INDEXER>(mem, cmd, draw_id);
+            ? gpu_draw<uint32_t, DRAW_INDEXER | DRAW_CULLING>(
+                mem,
+                cmd,
+                draw_id
+            ) : gpu_draw<uint32_t, DRAW_INDEXER>(mem, cmd, draw_id);
         return;
     }
 }
@@ -211,7 +220,7 @@ inline void ExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
         std::copy_n(
             arr[j] + (index * str[j]),
             siz[j],
-            reinterpret_cast<char *>(&out_attribs[ind[j]])
+            reinterpret_cast<char *>(out_attribs + ind[j])
         );
     }
 }
@@ -261,14 +270,20 @@ static inline void rasterize(Frame &frame, OutVertex *triangle) {
  * @return color 4 floats
  */
 glm::vec4 read_texture(Texture const &texture, glm::vec2 uv) {
-    if(!texture.data)return glm::vec4(0.f);
+    if (!texture.data)
+        return glm::vec4(0.f);
+
     auto uv1 = glm::fract(uv);
-    auto uv2 = uv1*glm::vec2(texture.width-1,texture.height-1)+0.5f;
+    auto uv2 = uv1*glm::vec2(texture.width-1, texture.height - 1) + 0.5f;
     auto pix = glm::uvec2(uv2);
     //auto t   = glm::fract(uv2);
-    glm::vec4 color = glm::vec4(0.f,0.f,0.f,1.f);
-    for(uint32_t c=0;c<texture.channels;++c)
-        color[c] = texture.data[(pix.y*texture.width+pix.x)*texture.channels+c]/255.f;
+    glm::vec4 color = glm::vec4(0.f, 0.f, 0.f, 1.f);
+
+    for (uint32_t c = 0; c < texture.channels; ++c)
+        color[c] = texture.data[
+            (pix.y * texture.width + pix.x) * texture.channels + c
+        ] / 255.f;
+
     return color;
 }
 
