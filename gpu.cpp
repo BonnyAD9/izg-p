@@ -23,6 +23,9 @@ struct ExtAttrib {
     size_t cnt;
 };
 
+#define DRAW_INDEXER 0x1
+#define DRAW_CULLING 0x2
+
 static inline void gpu_clear(GPUMemory &mem, const ClearCommand &cmd);
 
 static inline void gpu_draw(
@@ -31,7 +34,7 @@ static inline void gpu_draw(
     uint32_t draw_id
 );
 
-template<typename type, bool use_indexer>
+template<typename type, int flags>
 static inline void gpu_draw(
     GPUMemory &mem,
     const DrawCommand &cmd,
@@ -88,26 +91,32 @@ static inline void gpu_draw(
     const uint32_t draw_id
 ) {
     if (cmd.vao.indexBufferID < 0) {
-        gpu_draw<void, false>(mem, cmd, draw_id);
+        gpu_draw<void, 0>(mem, cmd, draw_id);
         return;
     }
 
     switch (cmd.vao.indexType) {
     case IndexType::UINT8:
-        gpu_draw<uint8_t, true>(mem, cmd, draw_id);
+        cmd.backfaceCulling
+            ? gpu_draw<uint8_t, DRAW_INDEXER | DRAW_CULLING>(mem, cmd, draw_id)
+            : gpu_draw<uint8_t, DRAW_INDEXER>(mem, cmd, draw_id);
         return;
     case IndexType::UINT16:
-        gpu_draw<uint16_t, true>(mem, cmd, draw_id);
+        cmd.backfaceCulling
+            ? gpu_draw<uint16_t, DRAW_INDEXER | DRAW_CULLING>(mem, cmd, draw_id)
+            : gpu_draw<uint16_t, DRAW_INDEXER>(mem, cmd, draw_id);
         return;
     case IndexType::UINT32:
-        gpu_draw<uint32_t, true>(mem, cmd, draw_id);
+        cmd.backfaceCulling
+            ? gpu_draw<uint32_t, DRAW_INDEXER | DRAW_CULLING>(mem, cmd, draw_id)
+            : gpu_draw<uint32_t, DRAW_INDEXER>(mem, cmd, draw_id);
         return;
     }
 }
 
 // use template for the draw function to avoid duplicate code but don't
-// sacriface performance
-template<typename type, bool use_indexer>
+// sacriface performance, flags indicate the compile-time features to turn on
+template<typename type, int flags>
 static inline void gpu_draw(
     GPUMemory &mem,
     const DrawCommand &cmd,
@@ -126,7 +135,7 @@ static inline void gpu_draw(
 
     // this is left out when not using indexer
     const type *indexer;
-    if constexpr(use_indexer) {
+    if constexpr(flags & DRAW_INDEXER) {
         indexer = reinterpret_cast<const type *>(
             reinterpret_cast<const char *>(
                 mem.buffers[cmd.vao.indexBufferID].data
@@ -137,19 +146,45 @@ static inline void gpu_draw(
     // extract attributes
     ExtAttrib at{ cmd.vao.vertexAttrib, mem.buffers };
 
-    for (size_t i = 0; i < cmd.nofVertices; ++i) {
-        OutVertex out_vertex;
+    // start at 2 and search the vertices backwards to avoid checks that
+    // cmd.nofVertices is multiple of 3
+    for (size_t i = 2; i < cmd.nofVertices; i += 3) {
+        OutVertex triangle[3];
 
-        // set the index based on whether to use indexer
-        if constexpr(use_indexer) {
-            in_vertex.gl_VertexID = indexer[i];
-        } else {
-            in_vertex.gl_VertexID = i;
+        // run the vertex shader for 3 vertices
+        // j starts at 2 to ensure that the vertices are processed in order
+        for (size_t j = 2; j != SIZE_MAX; --j) {
+            // set the index based on whether to use indexer
+            if constexpr(flags & DRAW_INDEXER) {
+                in_vertex.gl_VertexID = indexer[i - j];
+            } else {
+                in_vertex.gl_VertexID = i - j;
+            }
+            at.set_attrib(in_vertex.gl_VertexID, in_vertex.attributes);
+            prog.vertexShader(triangle[2 - j], in_vertex, si);
         }
 
-        at.set_attrib(in_vertex.gl_VertexID, in_vertex.attributes);
+        // skip triangles if culling is enabled
+        if constexpr(flags & DRAW_CULLING) {
+            // |x0 y0 1|
+            // |x1 y1 1| < 0 => clockwise
+            // |x2 y2 1|
+            //     ||
+            // x0*y1 + x1*y2 + x2*y0 < y0*x1 + y1*x2 + y2*x0 => clockwise
 
-        prog.vertexShader(out_vertex, in_vertex, si);
+            auto a = // x0*y1 + x1*y2 + x2*y0
+                triangle[0].gl_Position.x * triangle[1].gl_Position.y +
+                triangle[1].gl_Position.x * triangle[2].gl_Position.y +
+                triangle[2].gl_Position.x * triangle[0].gl_Position.y;
+            auto b = // y0*x1 + y1*x2 + y2*x0
+                triangle[0].gl_Position.y * triangle[1].gl_Position.x +
+                triangle[1].gl_Position.y * triangle[2].gl_Position.x +
+                triangle[2].gl_Position.y * triangle[0].gl_Position.x;
+
+            // skip the triangle if it is clockwise
+            if (a <= b)
+                continue;
+        }
     }
 }
 
