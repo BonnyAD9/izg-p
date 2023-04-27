@@ -8,6 +8,21 @@
 #include <student/gpu.hpp>
 #include <algorithm>
 
+struct ExtAttrib {
+    inline ExtAttrib(const VertexAttrib *attributes, const Buffer *buffers);
+    inline void set_attrib(size_t index, Attribute *out_attribs) const;
+    // the actual indexes
+    size_t ind[maxAttributes];
+    // sizes of the data
+    size_t siz[maxAttributes];
+    // strides
+    size_t str[maxAttributes];
+    // the coresponding buffers
+    const char *arr[maxAttributes];
+    // number of attributes
+    size_t cnt;
+};
+
 static inline void gpu_clear(GPUMemory &mem, const ClearCommand &cmd);
 
 static inline void gpu_draw(
@@ -21,16 +36,6 @@ static inline void gpu_draw(
     GPUMemory &mem,
     const DrawCommand &cmd,
     const uint32_t draw_id
-);
-
-static inline size_t extract_attributes(
-    size_t *attrib_indexes,
-    size_t *attrib_sizes,
-    size_t *attrib_strides,
-    const char **attrib_arrays,
-    const VertexAttrib *attributes,
-    const uint32_t max_attrib,
-    const Buffer *buffers
 );
 
 //! [gpu_execute]
@@ -129,16 +134,8 @@ static inline void gpu_draw(
         );
     }
 
-    // attributes
-    size_t at_ind[maxAttributes];
-    size_t at_siz[maxAttributes];
-    size_t at_str[maxAttributes];
-    const char *at_arr[maxAttributes];
-
-    size_t at_cnt = extract_attributes(
-        at_ind, at_siz, at_str, at_arr,
-        cmd.vao.vertexAttrib, maxAttributes, mem.buffers
-    );
+    // extract attributes
+    ExtAttrib at{ cmd.vao.vertexAttrib, mem.buffers };
 
     for (size_t i = 0; i < cmd.nofVertices; ++i) {
         OutVertex out_vertex;
@@ -150,47 +147,42 @@ static inline void gpu_draw(
             in_vertex.gl_VertexID = i;
         }
 
-        // set the attributes
-        for (size_t j = 0; j < at_cnt; ++j) {
-            std::copy_n(
-                at_arr[j] + (in_vertex.gl_VertexID * at_str[j]),
-                at_siz[j],
-                reinterpret_cast<char *>(&in_vertex.attributes[at_ind[j]])
-            );
-        }
+        at.set_attrib(in_vertex.gl_VertexID, in_vertex.attributes);
 
         prog.vertexShader(out_vertex, in_vertex, si);
     }
 }
 
-static inline size_t extract_attributes(
-    size_t *attrib_indexes,
-    size_t *attrib_sizes,
-    size_t *attrib_strides,
-    const char **attrib_arrays,
+inline ExtAttrib::ExtAttrib(
     const VertexAttrib *attributes,
-    const uint32_t max_attrib,
     const Buffer *buffers
-) {
-    size_t attrib_count = 0;
-
-    for (size_t i = 0; i < max_attrib; ++i) {
+) : cnt(0) {
+    for (size_t i = 0; i < maxAttributes; ++i) {
         // filter out unused attributes
         if (attributes[i].type == AttributeType::EMPTY)
             continue;
 
-        attrib_indexes[attrib_count] = i;
-        attrib_sizes[attrib_count] =
-            static_cast<size_t>(attributes[i].type) % 8 * 4;
-
-        attrib_strides[attrib_count] = attributes[i].stride;
-        attrib_arrays[attrib_count] = reinterpret_cast<const char *>(
+        ind[cnt] = i;
+        // type % 8 * 4
+        siz[cnt] = (static_cast<size_t>(attributes[i].type) & 7) << 2;
+        str[cnt] = attributes[i].stride;
+        arr[cnt] = reinterpret_cast<const char *>(
             buffers[attributes[i].bufferID].data
         ) + attributes[i].offset;
-        ++attrib_count;
-    }
 
-    return attrib_count;
+        ++cnt;
+    }
+}
+
+
+inline void ExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
+    for (size_t j = 0; j < cnt; ++j) {
+        std::copy_n(
+            arr[j] + (index * str[j]),
+            siz[j],
+            reinterpret_cast<char *>(&out_attribs[ind[j]])
+        );
+    }
 }
 
 /**
