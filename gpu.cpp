@@ -63,6 +63,9 @@ static inline void rasterize(
 
 static inline uint32_t to_rgba(glm::vec4 color);
 
+// get the area of a triangle
+static inline float triangle_area(glm::vec2 a, glm::vec2 b, glm::vec2 c);
+
 //! [gpu_execute]
 void gpu_execute(GPUMemory &mem, CommandBuffer &cb) {
     uint32_t draw_id = UINT32_MAX;
@@ -307,6 +310,8 @@ static inline void rasterize(
         .gl_FragCoord{ 0.f, 0.f, p1.z, 1.f}
     };
 
+    float area = triangle_area(p0, p1, p2);
+
     for (glm::uint y = bl.y; y <= tr.y; ++y) {
         float e0 = (bl.x - p0.x) * d0.y - (y - p0.y) * d0.x;
         float e1 = (bl.x - p1.x) * d1.y - (y - p1.y) * d1.x;
@@ -318,14 +323,24 @@ static inline void rasterize(
             bool draw;
             if constexpr(backface)
                 draw = e0 >= 0 && e1 > 0 && e2 >= 0;
-            else // the e1 has different condition in order to pass test 12
+            else // e1 has different condition to pass test 12 (no tolerance)
                 draw = e0 <= 0 && e1 < 0 && e2 <= 0;
 
             if (draw) {
-                // call the fragment shader
+                // get the barycentric coordinates
+                glm::vec2 pt{x, y};
+                glm::vec3 bcc{
+                    triangle_area(p1, p2, pt) / area,
+                    triangle_area(p0, p2, pt) / area,
+                    triangle_area(p1, p0, pt) / area,
+                };
+
                 OutFragment out_fragment;
                 in_fragment.gl_FragCoord.x = x + .5f;
+                in_fragment.gl_FragCoord.z =
+                    p0.z * bcc.x + p1.z * bcc.y + p2.z * bcc.z;
 
+                // call the fragment shader
                 prog.fragmentShader(out_fragment, in_fragment, si);
                 colbuf[y * frame.width + x] =
                     to_rgba(out_fragment.gl_FragColor);
@@ -347,6 +362,10 @@ static inline uint32_t to_rgba(const glm::vec4 color) {
     };
 
     return *reinterpret_cast<const uint32_t *>(comp);
+}
+
+static inline float triangle_area(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
+    return std::abs(a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2;
 }
 
 /**

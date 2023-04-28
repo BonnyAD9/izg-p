@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "*.html": "html",
+        "*.h": "c",
+        "*.d": "makefile",
+        "cstddef": "cpp"
+    }
+}
