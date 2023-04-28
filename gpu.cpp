@@ -317,21 +317,14 @@ static inline void rasterize(
             // backface or not
             bool draw;
             if constexpr(backface)
-                draw = e0 > 0 && e1 > 0 && e2 > 0; // maybe >= ?
-            else
-                draw = e0 < 0 && e1 < 0 && e2 < 0; // maybe <= ?
+                draw = e0 >= 0 && e1 > 0 && e2 >= 0;
+            else // the e1 has different condition in order to pass test 12
+                draw = e0 <= 0 && e1 < 0 && e2 <= 0;
 
             if (draw) {
                 // call the fragment shader
                 OutFragment out_fragment;
                 in_fragment.gl_FragCoord.x = x + .5f;
-
-                // debugging:
-                auto fx = in_fragment.gl_FragCoord.x;
-                auto fy = in_fragment.gl_FragCoord.y;
-                if (fx <= 0 || fy <= 0 || fx >= 100 || fy >= 100 || fx + fy > 100)
-                    0;
-                // :debugging
 
                 prog.fragmentShader(out_fragment, in_fragment, si);
                 colbuf[y * frame.width + x] =
