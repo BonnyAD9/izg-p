@@ -53,7 +53,15 @@ static void gpu_draw(
 static inline bool is_backface(OutVertex *triangle);
 
 // rasterizes the given triangle (ndc coordinates) on the frame
-static inline void rasterize(Frame &frame, OutVertex *triangle);
+template<bool backface>
+static inline void rasterize(
+    Frame &frame,
+    OutVertex *triangle,
+    const Program &prog,
+    const ShaderInterface &si
+);
+
+static inline uint32_t to_rgba(glm::vec4 color);
 
 //! [gpu_execute]
 void gpu_execute(GPUMemory &mem, CommandBuffer &cb) {
@@ -76,17 +84,10 @@ void gpu_execute(GPUMemory &mem, CommandBuffer &cb) {
 
 static inline void gpu_clear(GPUMemory &mem, const ClearCommand &cmd) {
     if (cmd.clearColor) {
-        const uint8_t comp[] = {
-            static_cast<uint8_t>(cmd.color.r * 255),
-            static_cast<uint8_t>(cmd.color.g * 255),
-            static_cast<uint8_t>(cmd.color.b * 255),
-            static_cast<uint8_t>(cmd.color.a * 255),
-        };
-
         std::fill_n(
             reinterpret_cast<uint32_t *>(mem.framebuffer.color),
             mem.framebuffer.height * mem.framebuffer.width,
-            *reinterpret_cast<const uint32_t *>(comp)
+            to_rgba(cmd.color)
         );
     }
 
@@ -194,13 +195,15 @@ static void gpu_draw(
             triangle[2 - j].gl_Position /= triangle[2 - j].gl_Position.w;
         }
 
-        // skip backface triangles if culling is enabled
-        if constexpr(flags & DRAW_CULLING) {
-            if (is_backface(triangle))
+        if (is_backface(triangle)) {
+            // skip backface triangles if culling is enabled
+            if constexpr(flags & DRAW_CULLING)
                 continue;
-        }
+            else
+                rasterize<true>(mem.framebuffer, triangle, prog, si);
+        } else
+            rasterize<false>(mem.framebuffer, triangle, prog, si);
 
-        rasterize(mem.framebuffer, triangle);
     }
 }
 
@@ -254,7 +257,13 @@ static inline bool is_backface(OutVertex *triangle) {
     return a <= b;
 }
 
-static inline void rasterize(Frame &frame, OutVertex *triangle) {
+template<bool backface>
+static inline void rasterize(
+    Frame &frame,
+    OutVertex *triangle,
+    const Program &prog,
+    const ShaderInterface &si
+) {
     // names for more readable code
     auto p0 = triangle[0].gl_Position;
     auto p1 = triangle[1].gl_Position;
@@ -286,7 +295,6 @@ static inline void rasterize(Frame &frame, OutVertex *triangle) {
     glm::uvec2 bl = fbl;
     glm::uvec2 tr = ftr;
 
-    // TODO: rasterization
     // rasterization using pineda
 
     // edge vectors
@@ -294,23 +302,58 @@ static inline void rasterize(Frame &frame, OutVertex *triangle) {
     glm::vec2 d1{ p2.x - p1.x, p2.y - p1.y };
     glm::vec2 d2{ p0.x - p2.x, p0.y - p2.y };
 
-    // ABGR color - yellow, temporary before baricentric coordinates
-    uint32_t color = 0xFF00FFFFu;
     uint32_t *colbuf = reinterpret_cast<uint32_t *>(frame.color);
+    InFragment in_fragment{
+        .gl_FragCoord{ 0.f, 0.f, p1.z, 1.f}
+    };
 
     for (glm::uint y = bl.y; y <= tr.y; ++y) {
         float e0 = (bl.x - p0.x) * d0.y - (y - p0.y) * d0.x;
         float e1 = (bl.x - p1.x) * d1.y - (y - p1.y) * d1.x;
         float e2 = (bl.x - p2.x) * d2.y - (y - p2.y) * d2.x;
+        in_fragment.gl_FragCoord.y = y + .5f;
         for (glm::uint x = bl.x; x <= tr.x; ++x) {
-            if (e0 >= 0 && e1 >= 0 && e2 >= 0)
-                colbuf[y * frame.width + x] = color;
+            // change the drawing condition based on whether the triangle is
+            // backface or not
+            bool draw;
+            if constexpr(backface)
+                draw = e0 > 0 && e1 > 0 && e2 > 0; // maybe >= ?
+            else
+                draw = e0 < 0 && e1 < 0 && e2 < 0; // maybe <= ?
+
+            if (draw) {
+                // call the fragment shader
+                OutFragment out_fragment;
+                in_fragment.gl_FragCoord.x = x + .5f;
+
+                // debugging:
+                auto fx = in_fragment.gl_FragCoord.x;
+                auto fy = in_fragment.gl_FragCoord.y;
+                if (fx <= 0 || fy <= 0 || fx >= 100 || fy >= 100 || fx + fy > 100)
+                    0;
+                // :debugging
+
+                prog.fragmentShader(out_fragment, in_fragment, si);
+                colbuf[y * frame.width + x] =
+                    to_rgba(out_fragment.gl_FragColor);
+            }
 
             e0 += d0.y;
             e1 += d1.y;
             e2 += d2.y;
         }
     }
+}
+
+static inline uint32_t to_rgba(const glm::vec4 color) {
+    const uint8_t comp[] = {
+        static_cast<uint8_t>(color.r * 255),
+        static_cast<uint8_t>(color.g * 255),
+        static_cast<uint8_t>(color.b * 255),
+        static_cast<uint8_t>(color.a * 255),
+    };
+
+    return *reinterpret_cast<const uint32_t *>(comp);
 }
 
 /**
