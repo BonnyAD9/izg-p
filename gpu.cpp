@@ -268,7 +268,49 @@ static inline void rasterize(Frame &frame, OutVertex *triangle) {
     p2.x = (p2.x + 1) * frame.width / 2;
     p2.y = (p2.y + 1) * frame.height / 2;
 
+    // calculate bounding box inside the screen
+    glm::vec2 fbl{ // bottom left
+        std::max(0.f, std::min({p0.x, p1.x, p2.x})),
+        std::max(0.f, std::min({p0.y, p1.y, p2.y})),
+    };
+    glm::vec2 ftr{ // top right
+        std::min<float>(frame.width - 1, std::max({p0.x, p1.x, p2.x})),
+        std::min<float>(frame.height - 1, std::max({p0.y, p1.y, p2.y})),
+    };
+
+    // check if the triangle is on screen
+    if (fbl.x >= ftr.x || fbl.y >= ftr.y)
+        return;
+
+    // make it integers
+    glm::uvec2 bl = fbl;
+    glm::uvec2 tr = ftr;
+
     // TODO: rasterization
+    // rasterization using pineda
+
+    // edge vectors
+    glm::vec2 d0{ p1.x - p0.x, p1.y - p0.y };
+    glm::vec2 d1{ p2.x - p1.x, p2.y - p1.y };
+    glm::vec2 d2{ p0.x - p2.x, p0.y - p2.y };
+
+    // ABGR color - yellow, temporary before baricentric coordinates
+    uint32_t color = 0xFF00FFFFu;
+    uint32_t *colbuf = reinterpret_cast<uint32_t *>(frame.color);
+
+    for (glm::uint y = bl.y; y <= tr.y; ++y) {
+        float e0 = (bl.x - p0.x) * d0.y - (y - p0.y) * d0.x;
+        float e1 = (bl.x - p1.x) * d1.y - (y - p1.y) * d1.x;
+        float e2 = (bl.x - p2.x) * d2.y - (y - p2.y) * d2.x;
+        for (glm::uint x = bl.x; x <= tr.x; ++x) {
+            if (e0 >= 0 && e1 >= 0 && e2 >= 0)
+                colbuf[y * frame.width + x] = color;
+
+            e0 += d0.y;
+            e1 += d1.y;
+            e2 += d2.y;
+        }
+    }
 }
 
 /**
