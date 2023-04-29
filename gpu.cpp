@@ -600,23 +600,39 @@ inline void FragmentContext::eval_at(const float x, const float y) {
  */
 
 inline void FragmentContext::add_x() {
+    // update the point
+    pt.x += 1;
+
+    // update the sides
     abv -= t.ab.y;
     bcv -= t.bc.y;
     cav -= t.ca.y;
 }
 
 inline void FragmentContext::sub_x() {
+    // update the point
+    pt.x -= 1;
+
+    // update point evaluation
     abv += t.ab.y;
     bcv += t.bc.y;
     cav += t.ca.y;
 }
 
 inline void FragmentContext::add_y() {
+    // update the point
+    pt.y += 1;
+
+    // update point evaluation
     abv += t.ab.x;
     bcv += t.bc.x;
     cav += t.ca.x;
 }
 inline void FragmentContext::sub_y() {
+    // update the point
+    pt.y -= 1;
+
+    // update point evaluation
     abv -= t.ab.x;
     bcv -= t.bc.x;
     cav -= t.ca.x;
