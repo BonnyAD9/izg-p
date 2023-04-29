@@ -429,7 +429,7 @@ inline Triangle::Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c)
 inline bool Triangle::is_backface() const {
     // evaluate the line going through the points b and c in the point a
     // negative => backface, 0 => in one line
-    return bc.x * (a.y - b.y) <= bc.y * (a.x - b.x);
+    return bc.x * ab.y >= bc.y * ab.x;
 }
 
 inline float Triangle::get_area() {
