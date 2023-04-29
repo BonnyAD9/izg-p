@@ -3,11 +3,14 @@
  * @brief This file contains implementation of gpu
  *
  * @author Tomáš Milet, imilet@fit.vutbr.cz
+ *
+ * Implemented by: Jakub Antonín Štigler (xstigl00)
  */
 
 #include <student/gpu.hpp>
 #include <algorithm>
 
+// used to extract attributes for vertex shader for faster iteration
 struct ExtAttrib {
     inline ExtAttrib(const VertexAttrib *attributes, const Buffer *buffers);
     inline void set_attrib(size_t index, Attribute *out_attribs) const;
@@ -23,6 +26,7 @@ struct ExtAttrib {
     size_t cnt;
 };
 
+// contains the points of the triangle and its precalculated edges
 struct Triangle {
     inline Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c);
     // determines whether the triangle is backface to the camera or not
@@ -49,6 +53,7 @@ struct Triangle {
     float area;
 };
 
+// used for rasterizing
 struct FragmentContext {
     inline FragmentContext(
         const Triangle &t,
@@ -58,12 +63,20 @@ struct FragmentContext {
         const ShaderInterface &si,
         bool &failed
     );
+    // evaluates the equations at the given point
     inline void eval_at(const float x, const float y);
+    // changes the evaluated point by 1 in the x axis
     inline void add_x();
+    // changes the evaluated point by -1 in the x axis
     inline void sub_x();
+    // changes the evaluated point by 1 in the y axis
     inline void add_y();
+    // changes the evaluated point by -1 in the y axis
     inline void sub_y();
+    // calls fragment shader and draws the current point
     inline void draw();
+    // returns true if the triangle should be drawn, the template parameter
+    // is used for optimization
     template<bool backface>
     inline bool should_draw() const;
 
