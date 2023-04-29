@@ -38,8 +38,9 @@ struct Triangle {
     glm::vec4 c;
 
     // vectors of the triangle sides (in xy 2D)
-    // used in many computation -> they are precomputed here
+    // used in many formulas -> they are precomputed here
     // ab = vector from a to b
+    // ...
     glm::vec2 ab;
     glm::vec2 bc;
     glm::vec2 ca;
@@ -314,7 +315,11 @@ inline void ExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
     }
 }
 
-// TODO: optimize
+// TODO: optimize (
+//   pre-select attributes,
+//   recursive barycentric,
+//   minimize searched pixels,
+// )
 template<bool backface>
 static inline void rasterize(
     Frame &frame,
@@ -355,9 +360,9 @@ static inline void rasterize(
     if (failed)
         return;
 
-    for (glm::uint y = fc.bl.y; y <= fc.tr.y; ++y) {
+    for (size_t y = fc.bl.y; y <= fc.tr.y; ++y) {
         fc.eval_at(fc.bl.x + .5f, y + .5f);
-        for (glm::uint x = fc.bl.x; x <= fc.tr.x; ++x) {
+        for (size_t x = fc.bl.x; x <= fc.tr.x; ++x) {
             if (fc.should_draw<backface>()) {
                 fc.draw();
             }
@@ -379,7 +384,9 @@ static inline uint32_t to_rgba(const glm::vec4 color) {
 }
 
 static inline float triangle_area(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
-    return std::abs(a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2;
+    return std::abs(
+        a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)
+    ) / 2;
 }
 
 /* (backface = clockwise, frontface = counterclockwise)
