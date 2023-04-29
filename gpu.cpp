@@ -48,6 +48,42 @@ struct Triangle {
     float area;
 };
 
+struct FragmentContext {
+    inline FragmentContext(
+        const Triangle &t,
+        const OutVertex *vert,
+        Frame &frame,
+        const Program &prog
+    );
+    inline void eval_at(const float x, const float y);
+    inline void add_x();
+    inline void sub_x();
+    inline void add_y();
+    inline void sub_y();
+    inline void draw();
+    template<bool backface>
+    inline bool should_draw() const;
+
+    // tirangle to draw
+    const Triangle &t;
+    // the results of vertex shader
+    const OutVertex *vert;
+    // the shader program
+    const Program &prog;
+    // the current pixel
+    glm::vec2 pt;
+    // the color buffer
+    uint32_t *color;
+    // values of triangle side equations of pt
+    float abv;
+    float bcv;
+    float cav;
+    // bottom left bounding box coordinate
+    glm::uvec2 bl;
+    // top right bounding box coordinate
+    glm::uvec2 tr;
+};
+
 #define DRAW_INDEXER 0x1
 #define DRAW_CULLING 0x2
 
@@ -513,6 +549,89 @@ inline float Triangle::get_area() {
         return area = (ab.y * bc.x - ab.x * bc.y) / 2;
     else
         return area = (ab.x * bc.y - ab.y * bc.x) / 2;
+}
+
+inline FragmentContext::FragmentContext(
+    const Triangle &t,
+    const OutVertex *vert,
+    Frame &frame,
+    const Program &prog
+) : t(t),
+    prog(prog),
+    vert(vert),
+    color(reinterpret_cast<uint32_t *>(frame.color))
+{
+    // calculate bounding box
+    glm::vec2 bl{ // bottom left
+        std::max(0.f, std::min({t.a.x, t.b.x, t.c.x})),
+        std::max(0.f, std::min({t.a.y, t.b.y, t.c.y})),
+    };
+    glm::vec2 tr{ // top right
+        std::min<float>(frame.width - 1, std::max({t.a.x, t.b.x, t.c.x})),
+        std::min<float>(frame.height - 1, std::max({t.a.y, t.b.y, t.c.y})),
+    };
+    // make it integers
+    this->bl = bl;
+    this->tr = tr;
+
+    // evaluate at initial (bottom left) position
+    eval_at(this->bl.x, this->bl.y);
+}
+
+inline void FragmentContext::eval_at(const float x, const float y) {
+    abv = t.ab.x * (y - t.a.y) - t.ab.y * (x - t.a.x);
+    // the computation with the point a can be reused
+    bcv = t.bc.x * (y - t.a.y) - t.bc.y * (x - t.a.x);
+    cav = t.ca.x * (y - t.c.y) - t.ca.y * (x - t.c.x);
+}
+
+/* these relations are derived from the side equations, example for side AB:
+ *   f(x, y) = t.ab.x * (y - t.a.y) - t.ab.y * (x - t.a.x)
+ *
+ * Now change x by one:
+ *   f(x + 1, y) = t.ab.x * (y - t.a.y) - t.ab.y * (x + 1 - t.a.x)
+ *   f(x + 1, y) = t.ab.x * (y - t.a.y) - t.ab.y * (x - t.a.x) + (-t.ab.y)
+ *   f(x + 1, y) = f(x, y) - t.ab.y
+ *
+ * The same can be done for f(x - 1, y), f(x, y + 1) and f(x, y - 1):
+ *   f(x - 1, y) = f(x, y) + t.ab.y
+ *   f(x, y + 1) = f(x, y) + t.ab.x
+ *   f(x, y - 1) = f(x, y) - t.ab.x
+ */
+
+inline void FragmentContext::add_x() {
+    abv -= t.ab.y;
+    bcv -= t.bc.y;
+    cav -= t.ca.y;
+}
+
+inline void FragmentContext::sub_x() {
+    abv += t.ab.y;
+    bcv += t.bc.y;
+    cav += t.ca.y;
+}
+
+inline void FragmentContext::add_y() {
+    abv += t.ab.x;
+    bcv += t.bc.x;
+    cav += t.ca.x;
+}
+inline void FragmentContext::sub_y() {
+    abv -= t.ab.x;
+    bcv -= t.bc.x;
+    cav -= t.ca.x;
+}
+
+inline void FragmentContext::draw() {
+
+}
+
+template<bool backface>
+inline bool FragmentContext::should_draw() const {
+    if constexpr(backface)
+        return abv <= 0 && bcv < 0 && cav <= 0;
+    else // bcv has different condition to pass test 12 (it has no tolerance)
+        return abv >= 0 && bcv > 0 && cav >= 0;
 }
 
 /**
