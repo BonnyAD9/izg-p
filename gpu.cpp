@@ -27,6 +27,9 @@ struct Triangle {
     inline Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c);
     // determines whether the triangle is backface to the camera or not
     inline bool is_backface() const;
+    // gets the area of the triangle
+    // the template parameter is there to optimize
+    template<bool backface>
     inline float get_area();
 
     // points of the triangle
@@ -292,6 +295,8 @@ static inline void rasterize(
     p2.x = (p2.x + 1) * frame.width / 2;
     p2.y = (p2.y + 1) * frame.height / 2;
 
+    Triangle t{p0, p1, p2};
+
     // calculate bounding box inside the screen
     glm::vec2 fbl{ // bottom left
         std::max(0.f, std::min({p0.x, p1.x, p2.x})),
@@ -322,7 +327,8 @@ static inline void rasterize(
         .gl_FragCoord{ 0.f, 0.f, p1.z, 1.f}
     };
 
-    float area = triangle_area(p0, p1, p2);
+    //float area = triangle_area(p0, p1, p2);
+    float area = t.get_area<backface>();
 
     for (glm::uint y = bl.y; y <= tr.y; ++y) {
         float e0 = (bl.x - p0.x) * d0.y - (y - p0.y) * d0.x;
@@ -419,7 +425,8 @@ static inline float triangle_area(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
     return std::abs(a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2;
 }
 
-/* The triangle explained:
+/* (backface = clockwise, frontface = counterclockwise)
+ * The triangle explained:
  *   A_
  *   |\
  * ab| \ca
@@ -460,9 +467,42 @@ inline bool Triangle::is_backface() const {
     return bc.x * ab.y >= bc.y * ab.x;
 }
 
+template<bool backface>
 inline float Triangle::get_area() {
-    // TODO: get_area
-    return 5;
+    /* This is derived from the fact that the area of parallelogram is:
+     *     A_________D
+     *     /        /
+     *    /        /
+     *   /________/
+     *   B        C
+     *
+     * the absolute value of determinant:
+     *   ||A.x - B.x  C.x - B.x||
+     *   ||A.y - B.y  C.y - B.y||
+     *
+     * And the area of triangle ABC is just half of this area. The differences
+     * are already precomputed:
+     *   a.x - b.x = ab.x
+     *   ...
+     *
+     * so:
+     *   S = ||-ab.x  -bc.x||
+     *       ||-ab.y  -bc.y||
+     *   S = |(-ab.x) * (-bc.y) - (-ab.y) * (-bc.x)|
+     *   S = |ab.x * bc.y - ab.y * bc.x|
+     *
+     * And when we know the orientation of the triangle, we cane eliminate the
+     * absolute value with condition:
+     *   S = ab.x * bc.y - ab.y * bc.x    when not backface
+     *   S = ab.y * bc.x - ab.x * bc.y    when backface
+     *
+     * And the area needs to be divided by 2 to get the area of the triangle
+     * and not the parallelogram.
+     */
+    if constexpr(backface)
+        return area = (ab.y * bc.x - ab.x * bc.y) / 2;
+    else
+        return area = (ab.x * bc.y - ab.y * bc.x) / 2;
 }
 
 /**
