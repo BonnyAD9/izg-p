@@ -23,6 +23,28 @@ struct ExtAttrib {
     size_t cnt;
 };
 
+struct Triangle {
+    inline Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c);
+    // determines whether the triangle is backface to the camera or not
+    inline bool is_backface() const;
+    inline float get_area();
+
+    // points of the triangle
+    glm::vec4 a;
+    glm::vec4 b;
+    glm::vec4 c;
+
+    // vectors of the triangle sides (in xy 2D)
+    // used in many computation -> they are precomputed here
+    // ab = vector from a to b
+    glm::vec2 ab;
+    glm::vec2 bc;
+    glm::vec2 ca;
+
+    // area that can be procomputed using the get_area method
+    float area;
+};
+
 #define DRAW_INDEXER 0x1
 #define DRAW_CULLING 0x2
 
@@ -200,7 +222,13 @@ static void gpu_draw(
             triangle[2 - j].gl_Position.z /= triangle[2 - j].gl_Position.w;
         }
 
-        if (is_backface(triangle)) {
+        Triangle t{
+            triangle[0].gl_Position,
+            triangle[1].gl_Position,
+            triangle[2].gl_Position
+        };
+
+        if (t.is_backface()) {
             // skip backface triangles if culling is enabled
             if constexpr(flags & DRAW_CULLING)
                 continue;
@@ -241,25 +269,6 @@ inline void ExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
             reinterpret_cast<char *>(out_attribs + ind[j])
         );
     }
-}
-
-static inline bool is_backface(OutVertex *triangle) {
-    // |x0 y0 1|
-    // |x1 y1 1| < 0 => clockwise => backface
-    // |x2 y2 1|
-    //     ||
-    // x0*y1 + x1*y2 + x2*y0 < y0*x1 + y1*x2 + y2*x0 => clockwise
-
-    auto a = // x0*y1 + x1*y2 + x2*y0
-        triangle[0].gl_Position.x * triangle[1].gl_Position.y +
-        triangle[1].gl_Position.x * triangle[2].gl_Position.y +
-        triangle[2].gl_Position.x * triangle[0].gl_Position.y;
-    auto b = // y0*x1 + y1*x2 + y2*x0
-        triangle[0].gl_Position.y * triangle[1].gl_Position.x +
-        triangle[1].gl_Position.y * triangle[2].gl_Position.x +
-        triangle[2].gl_Position.y * triangle[0].gl_Position.x;
-
-    return a <= b;
 }
 
 // TODO: optimize
@@ -342,8 +351,6 @@ static inline void rasterize(
                 in_fragment.gl_FragCoord.z =
                     p0.z * bcc.x + p1.z * bcc.y + p2.z * bcc.z;
                 // skip fragments behind camera
-                /*if (in_fragment.gl_FragCoord.z > 1)
-                    continue;*/
 
                 // get perspective barycentric coordinates
                 float s = bcc.x / p0.w + bcc.y / p1.w + bcc.z / p2.w;
@@ -410,6 +417,24 @@ static inline uint32_t to_rgba(const glm::vec4 color) {
 
 static inline float triangle_area(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
     return std::abs(a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2;
+}
+
+inline Triangle::Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c)
+: a(a), b(b), c(c) {
+    ab = glm::vec2{ b.x - a.x, b.y - a.y };
+    bc = glm::vec2{ c.x - b.x, c.y - b.y };
+    ca = glm::vec2{ a.x - c.x, a.y - c.y };
+}
+
+inline bool Triangle::is_backface() const {
+    // evaluate the line going through the points b and c in the point a
+    // negative => backface, 0 => in one line
+    return bc.x * (a.y - b.y) <= bc.y * (a.x - b.x);
+}
+
+inline float Triangle::get_area() {
+    // TODO: get_area
+    return 5;
 }
 
 /**
