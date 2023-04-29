@@ -282,29 +282,39 @@ static inline void rasterize(
     const Program &prog,
     const ShaderInterface &si
 ) {
-    // names for more readable code
-    auto p0 = triangle[0].gl_Position;
-    auto p1 = triangle[1].gl_Position;
-    auto p2 = triangle[2].gl_Position;
+    // viewport transform into a triangle
+    float xm = frame.width / 2.f;
+    float ym = frame.height / 2.f;
 
-    // viewport transform
-    p0.x = (p0.x + 1) * frame.width / 2;
-    p0.y = (p0.y + 1) * frame.height / 2;
-    p1.x = (p1.x + 1) * frame.width / 2;
-    p1.y = (p1.y + 1) * frame.height / 2;
-    p2.x = (p2.x + 1) * frame.width / 2;
-    p2.y = (p2.y + 1) * frame.height / 2;
-
-    Triangle t{p0, p1, p2};
+    Triangle t{
+        glm::vec4{
+            (triangle[0].gl_Position.x + 1) * xm,
+            (triangle[0].gl_Position.y + 1) * ym,
+            triangle [0].gl_Position.z,
+            triangle [0].gl_Position.w,
+        },
+        glm::vec4{
+            (triangle[1].gl_Position.x + 1) * xm,
+            (triangle[1].gl_Position.y + 1) * ym,
+            triangle [1].gl_Position.z,
+            triangle [1].gl_Position.w,
+        },
+        glm::vec4{
+            (triangle[2].gl_Position.x + 1) * xm,
+            (triangle[2].gl_Position.y + 1) * ym,
+            triangle [2].gl_Position.z,
+            triangle [2].gl_Position.w,
+        },
+    };
 
     // calculate bounding box inside the screen
     glm::vec2 fbl{ // bottom left
-        std::max(0.f, std::min({p0.x, p1.x, p2.x})),
-        std::max(0.f, std::min({p0.y, p1.y, p2.y})),
+        std::max(0.f, std::min({t.a.x, t.b.x, t.c.x})),
+        std::max(0.f, std::min({t.a.y, t.b.y, t.c.y})),
     };
     glm::vec2 ftr{ // top right
-        std::min<float>(frame.width - 1, std::max({p0.x, p1.x, p2.x})),
-        std::min<float>(frame.height - 1, std::max({p0.y, p1.y, p2.y})),
+        std::min<float>(frame.width - 1, std::max({t.a.x, t.b.x, t.c.x})),
+        std::min<float>(frame.height - 1, std::max({t.a.y, t.b.y, t.c.y})),
     };
 
     // check if the triangle is on screen
@@ -318,22 +328,22 @@ static inline void rasterize(
     // rasterization using pineda
 
     // edge vectors
-    glm::vec2 d0{ p1.x - p0.x, p1.y - p0.y };
-    glm::vec2 d1{ p2.x - p1.x, p2.y - p1.y };
-    glm::vec2 d2{ p0.x - p2.x, p0.y - p2.y };
+    glm::vec2 d0{ t.b.x - t.a.x, t.b.y - t.a.y };
+    glm::vec2 d1{ t.c.x - t.b.x, t.c.y - t.b.y };
+    glm::vec2 d2{ t.a.x - t.c.x, t.a.y - t.c.y };
 
     uint32_t *colbuf = reinterpret_cast<uint32_t *>(frame.color);
     InFragment in_fragment{
-        .gl_FragCoord{ 0.f, 0.f, p1.z, 1.f}
+        .gl_FragCoord{ 0.f, 0.f, t.b.z, 1.f}
     };
 
-    //float area = triangle_area(p0, p1, p2);
+    //float area = triangle_area(t.a, t.b, t.c);
     float area = t.get_area<backface>();
 
     for (glm::uint y = bl.y; y <= tr.y; ++y) {
-        float e0 = (bl.x - p0.x) * d0.y - (y - p0.y) * d0.x;
-        float e1 = (bl.x - p1.x) * d1.y - (y - p1.y) * d1.x;
-        float e2 = (bl.x - p2.x) * d2.y - (y - p2.y) * d2.x;
+        float e0 = (bl.x - t.a.x) * d0.y - (y - t.a.y) * d0.x;
+        float e1 = (bl.x - t.b.x) * d1.y - (y - t.b.y) * d1.x;
+        float e2 = (bl.x - t.c.x) * d2.y - (y - t.c.y) * d2.x;
         in_fragment.gl_FragCoord.y = y + .5f;
         for (glm::uint x = bl.x; x <= tr.x; ++x) {
             // change the drawing condition based on whether the triangle is
@@ -348,22 +358,22 @@ static inline void rasterize(
                 // get the barycentric coordinates
                 glm::vec2 pt{x + .5f, y + .5f};
                 glm::vec3 bcc{
-                    triangle_area(p1, p2, pt) / area,
-                    triangle_area(p0, p2, pt) / area,
-                    triangle_area(p1, p0, pt) / area,
+                    triangle_area(t.b, t.c, pt) / area,
+                    triangle_area(t.a, t.c, pt) / area,
+                    triangle_area(t.b, t.a, pt) / area,
                 };
 
                 in_fragment.gl_FragCoord.x = x + .5f;
                 in_fragment.gl_FragCoord.z =
-                    p0.z * bcc.x + p1.z * bcc.y + p2.z * bcc.z;
+                    t.a.z * bcc.x + t.b.z * bcc.y + t.c.z * bcc.z;
                 // skip fragments behind camera
 
                 // get perspective barycentric coordinates
-                float s = bcc.x / p0.w + bcc.y / p1.w + bcc.z / p2.w;
+                float s = bcc.x / t.a.w + bcc.y / t.b.w + bcc.z / t.c.w;
                 glm::vec3 pbc{
-                    bcc.x / (p0.w * s),
-                    bcc.y / (p1.w * s),
-                    bcc.z / (p2.w * s),
+                    bcc.x / (t.a.w * s),
+                    bcc.y / (t.b.w * s),
+                    bcc.z / (t.c.w * s),
                 };
 
                 for (size_t i = 0; i < maxAttributes; ++i) {
