@@ -419,6 +419,27 @@ static inline float triangle_area(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
     return std::abs(a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2;
 }
 
+/* The triangle explained:
+ *   A_
+ *   |\
+ * ab| \ca
+ *   |  \
+ *   V-->\
+ *   B bc C
+ *
+ * Counterclockwise vectors:
+ * ab = B - A
+ * bc = C - B
+ * ca = A - C
+ *
+ * The equation for line going through the sides of the triangles so that
+ * when a point is evaluated on their position, it is positive when inside
+ * the triangle (negative when the triangle is backface)
+ *   AB: ab.x * (y - a.y) - ab.y * (x - a.x) = 0
+ *   BC: bc.x * (y - b.y) - bc.y * (x - b.x) = 0
+ *   CA: ca.x * (y - c.y) - bc.y * (x - c.x) = 0
+ */
+
 inline Triangle::Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c)
 : a(a), b(b), c(c) {
     ab = glm::vec2{ b.x - a.x, b.y - a.y };
@@ -427,8 +448,15 @@ inline Triangle::Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c)
 }
 
 inline bool Triangle::is_backface() const {
-    // evaluate the line going through the points b and c in the point a
-    // negative => backface, 0 => in one line
+    /* This is derived from the equation for BC evaluated at the point A.
+     * The equation is negative when the triangle is backface.
+     * The equation is 0 when the points are in line (don't form triangle)
+     *   bc.x * (y - b.y) - bc.y * (x - b.x) <= 0        \ (x, y) = A
+     *   bc.x * (a.y - b.y) - bc.y * (a.x - b.x) <= 0
+     *   bc.x * (a.y - b.y) <= bc.y * (a.x - b.x)        \ a - b = -ab
+     *   bc.x * (-ab.y) <= bx.y * (-ab.x)
+     *   bx.x * ab.y >= bx.y * ab.x
+     */
     return bc.x * ab.y >= bc.y * ab.x;
 }
 
