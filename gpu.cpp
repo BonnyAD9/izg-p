@@ -195,7 +195,9 @@ static void gpu_draw(
             prog.vertexShader(triangle[2 - j], in_vertex, si);
 
             // perspective division
-            triangle[2 - j].gl_Position /= triangle[2 - j].gl_Position.w;
+            triangle[2 - j].gl_Position.x /= triangle[2 - j].gl_Position.w;
+            triangle[2 - j].gl_Position.y /= triangle[2 - j].gl_Position.w;
+            triangle[2 - j].gl_Position.z /= triangle[2 - j].gl_Position.w;
         }
 
         if (is_backface(triangle)) {
@@ -260,6 +262,7 @@ static inline bool is_backface(OutVertex *triangle) {
     return a <= b;
 }
 
+// TODO: optimize
 template<bool backface>
 static inline void rasterize(
     Frame &frame,
@@ -328,19 +331,60 @@ static inline void rasterize(
 
             if (draw) {
                 // get the barycentric coordinates
-                glm::vec2 pt{x, y};
+                glm::vec2 pt{x + .5f, y + .5f};
                 glm::vec3 bcc{
                     triangle_area(p1, p2, pt) / area,
                     triangle_area(p0, p2, pt) / area,
                     triangle_area(p1, p0, pt) / area,
                 };
 
-                OutFragment out_fragment;
                 in_fragment.gl_FragCoord.x = x + .5f;
                 in_fragment.gl_FragCoord.z =
                     p0.z * bcc.x + p1.z * bcc.y + p2.z * bcc.z;
+                // skip fragments behind camera
+                /*if (in_fragment.gl_FragCoord.z > 1)
+                    continue;*/
+
+                // get perspective barycentric coordinates
+                float s = bcc.x / p0.w + bcc.y / p1.w + bcc.z / p2.w;
+                glm::vec3 pbc{
+                    bcc.x / (p0.w * s),
+                    bcc.y / (p1.w * s),
+                    bcc.z / (p2.w * s),
+                };
+
+                for (size_t i = 0; i < maxAttributes; ++i) {
+                    // skip attribute
+                    AttributeType t = prog.vs2fs[i];
+                    if (t == AttributeType::EMPTY)
+                        continue;
+
+                    // copy attribute
+                    if (static_cast<int>(t) > 8) {
+                        std::copy_n(
+                            reinterpret_cast<uint8_t *>(
+                                triangle[0].attributes + i
+                            ),
+                            (static_cast<int>(t) & 3) << 2,
+                            reinterpret_cast<uint8_t *>(
+                                in_fragment.attributes + i
+                            )
+                        );
+                        continue;
+                    }
+
+                    // iterpolate attribute
+                    int count = static_cast<int>(t);
+                    for (size_t j = 0; j < count; ++j) {
+                        in_fragment.attributes[i].v4[j] =
+                            triangle[0].attributes[i].v4[j] * pbc.x +
+                            triangle[1].attributes[i].v4[j] * pbc.y +
+                            triangle[2].attributes[i].v4[j] * pbc.z;
+                    }
+                }
 
                 // call the fragment shader
+                OutFragment out_fragment;
                 prog.fragmentShader(out_fragment, in_fragment, si);
                 colbuf[y * frame.width + x] =
                     to_rgba(out_fragment.gl_FragColor);
