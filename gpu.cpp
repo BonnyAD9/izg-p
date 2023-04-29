@@ -53,7 +53,9 @@ struct FragmentContext {
         const Triangle &t,
         const OutVertex *vert,
         Frame &frame,
-        const Program &prog
+        const Program &prog,
+        const ShaderInterface &si,
+        bool &failed
     );
     inline void eval_at(const float x, const float y);
     inline void add_x();
@@ -70,6 +72,10 @@ struct FragmentContext {
     const OutVertex *vert;
     // the shader program
     const Program &prog;
+    // the constants for shader
+    const ShaderInterface &si;
+    // the frame buffer
+    Frame &frame;
     // the current pixel
     glm::vec2 pt;
     // the color buffer
@@ -79,9 +85,10 @@ struct FragmentContext {
     float bcv;
     float cav;
     // bottom left bounding box coordinate
-    glm::uvec2 bl;
+    glm::ivec2 bl;
     // top right bounding box coordinate
-    glm::uvec2 tr;
+    glm::ivec2 tr;
+
 };
 
 #define DRAW_INDEXER 0x1
@@ -104,14 +111,11 @@ static inline void gpu_draw(
  * @param flags used to enable some features (indexer culling)
  */
 template<typename type, int flags>
-static void gpu_draw(
+static inline void gpu_draw(
     GPUMemory &mem,
     const DrawCommand &cmd,
     const uint32_t draw_id
 );
-
-// determines whether the triangle is not facing the camera
-static inline bool is_backface(OutVertex *triangle);
 
 // rasterizes the given triangle (ndc coordinates) on the frame
 template<bool backface>
@@ -343,115 +347,22 @@ static inline void rasterize(
         },
     };
 
-    // calculate bounding box inside the screen
-    glm::vec2 fbl{ // bottom left
-        std::max(0.f, std::min({t.a.x, t.b.x, t.c.x})),
-        std::max(0.f, std::min({t.a.y, t.b.y, t.c.y})),
-    };
-    glm::vec2 ftr{ // top right
-        std::min<float>(frame.width - 1, std::max({t.a.x, t.b.x, t.c.x})),
-        std::min<float>(frame.height - 1, std::max({t.a.y, t.b.y, t.c.y})),
-    };
+    // prepare for rasterization
+    t.get_area<backface>();
+    bool failed;
+    FragmentContext fc{ t, triangle, frame, prog, si, failed };
 
-    // check if the triangle is on screen
-    if (fbl.x >= ftr.x || fbl.y >= ftr.y)
+    if (failed)
         return;
 
-    // make it integers
-    glm::uvec2 bl = fbl;
-    glm::uvec2 tr = ftr;
-
-    // rasterization using pineda
-
-    // edge vectors
-    glm::vec2 d0{ t.b.x - t.a.x, t.b.y - t.a.y };
-    glm::vec2 d1{ t.c.x - t.b.x, t.c.y - t.b.y };
-    glm::vec2 d2{ t.a.x - t.c.x, t.a.y - t.c.y };
-
-    uint32_t *colbuf = reinterpret_cast<uint32_t *>(frame.color);
-    InFragment in_fragment{
-        .gl_FragCoord{ 0.f, 0.f, t.b.z, 1.f}
-    };
-
-    //float area = triangle_area(t.a, t.b, t.c);
-    float area = t.get_area<backface>();
-
-    for (glm::uint y = bl.y; y <= tr.y; ++y) {
-        float e0 = (bl.x - t.a.x) * d0.y - (y - t.a.y) * d0.x;
-        float e1 = (bl.x - t.b.x) * d1.y - (y - t.b.y) * d1.x;
-        float e2 = (bl.x - t.c.x) * d2.y - (y - t.c.y) * d2.x;
-        in_fragment.gl_FragCoord.y = y + .5f;
-        for (glm::uint x = bl.x; x <= tr.x; ++x) {
-            // change the drawing condition based on whether the triangle is
-            // backface or not
-            bool draw;
-            if constexpr(backface)
-                draw = e0 >= 0 && e1 > 0 && e2 >= 0;
-            else // e1 has different condition to pass test 12 (no tolerance)
-                draw = e0 <= 0 && e1 < 0 && e2 <= 0;
-
-            if (draw) {
-                // get the barycentric coordinates
-                glm::vec2 pt{x + .5f, y + .5f};
-                glm::vec3 bcc{
-                    triangle_area(t.b, t.c, pt) / area,
-                    triangle_area(t.a, t.c, pt) / area,
-                    triangle_area(t.b, t.a, pt) / area,
-                };
-
-                in_fragment.gl_FragCoord.x = x + .5f;
-                in_fragment.gl_FragCoord.z =
-                    t.a.z * bcc.x + t.b.z * bcc.y + t.c.z * bcc.z;
-                // skip fragments behind camera
-
-                // get perspective barycentric coordinates
-                float s = bcc.x / t.a.w + bcc.y / t.b.w + bcc.z / t.c.w;
-                glm::vec3 pbc{
-                    bcc.x / (t.a.w * s),
-                    bcc.y / (t.b.w * s),
-                    bcc.z / (t.c.w * s),
-                };
-
-                for (size_t i = 0; i < maxAttributes; ++i) {
-                    // skip attribute
-                    AttributeType t = prog.vs2fs[i];
-                    if (t == AttributeType::EMPTY)
-                        continue;
-
-                    // copy attribute
-                    if (static_cast<int>(t) > 8) {
-                        std::copy_n(
-                            reinterpret_cast<uint8_t *>(
-                                triangle[0].attributes + i
-                            ),
-                            (static_cast<int>(t) & 3) << 2,
-                            reinterpret_cast<uint8_t *>(
-                                in_fragment.attributes + i
-                            )
-                        );
-                        continue;
-                    }
-
-                    // iterpolate attribute
-                    int count = static_cast<int>(t);
-                    for (size_t j = 0; j < count; ++j) {
-                        in_fragment.attributes[i].v4[j] =
-                            triangle[0].attributes[i].v4[j] * pbc.x +
-                            triangle[1].attributes[i].v4[j] * pbc.y +
-                            triangle[2].attributes[i].v4[j] * pbc.z;
-                    }
-                }
-
-                // call the fragment shader
-                OutFragment out_fragment;
-                prog.fragmentShader(out_fragment, in_fragment, si);
-                colbuf[y * frame.width + x] =
-                    to_rgba(out_fragment.gl_FragColor);
+    for (glm::uint y = fc.bl.y; y <= fc.tr.y; ++y) {
+        fc.eval_at(fc.bl.x + .5f, y + .5f);
+        for (glm::uint x = fc.bl.x; x <= fc.tr.x; ++x) {
+            if (fc.should_draw<backface>()) {
+                fc.draw();
             }
 
-            e0 += d0.y;
-            e1 += d1.y;
-            e2 += d2.y;
+            fc.add_x();
         }
     }
 }
@@ -555,12 +466,18 @@ inline FragmentContext::FragmentContext(
     const Triangle &t,
     const OutVertex *vert,
     Frame &frame,
-    const Program &prog
+    const Program &prog,
+    const ShaderInterface &si,
+    bool &failed
 ) : t(t),
     prog(prog),
     vert(vert),
-    color(reinterpret_cast<uint32_t *>(frame.color))
+    color(reinterpret_cast<uint32_t *>(frame.color)),
+    si(si),
+    frame(frame)
 {
+    failed = false;
+
     // calculate bounding box
     glm::vec2 bl{ // bottom left
         std::max(0.f, std::min({t.a.x, t.b.x, t.c.x})),
@@ -570,18 +487,26 @@ inline FragmentContext::FragmentContext(
         std::min<float>(frame.width - 1, std::max({t.a.x, t.b.x, t.c.x})),
         std::min<float>(frame.height - 1, std::max({t.a.y, t.b.y, t.c.y})),
     };
+
+    if (bl.x >= tr.x || bl.y >= tr.y) {
+        failed = true;
+        return;
+    }
+
     // make it integers
     this->bl = bl;
     this->tr = tr;
 
     // evaluate at initial (bottom left) position
-    eval_at(this->bl.x, this->bl.y);
+    eval_at(this->bl.x + .5f, this->bl.y + .5f);
 }
 
 inline void FragmentContext::eval_at(const float x, const float y) {
-    abv = t.ab.x * (y - t.a.y) - t.ab.y * (x - t.a.x);
-    // the computation with the point a can be reused
-    bcv = t.bc.x * (y - t.a.y) - t.bc.y * (x - t.a.x);
+    pt = glm::vec2{ x, y };
+
+    // the subtraction is reused so that the compiler may optimize it
+    abv = t.ab.x * (y - t.b.y) - t.ab.y * (x - t.b.x);
+    bcv = t.bc.x * (y - t.b.y) - t.bc.y * (x - t.b.x);
     cav = t.ca.x * (y - t.c.y) - t.ca.y * (x - t.c.x);
 }
 
@@ -639,15 +564,75 @@ inline void FragmentContext::sub_y() {
 }
 
 inline void FragmentContext::draw() {
+    // calculate barycentric coordinates
+    float m = 1 / t.area;
+    glm::vec3 bc{
+        triangle_area(t.b, t.c, pt) * m,
+        triangle_area(t.a, t.c, pt) * m,
+        0,
+    };
+    bc.z = 1 - bc.x - bc.y;
 
+    InFragment in{
+        .gl_FragCoord{
+            pt.x,
+            pt.y,
+            t.a.z * bc.x + t.b.z * bc.y + t.c.z * bc.z,
+            1.f,
+        },
+    };
+
+    // get perspective adjusted coordinates
+    float s = bc.x / t.a.w + bc.y / t.b.w + bc.z / t.c.w;
+    glm::vec3 pbc{
+        bc.x / (t.a.w * s),
+        bc.y / (t.b.w * s),
+        bc.z / (t.c.w * s),
+    };
+
+    // resolve the attributes
+    for (size_t i = 0; i < maxAttributes; ++i) {
+        // skip attribute
+        AttributeType t = prog.vs2fs[i];
+        if (t == AttributeType::EMPTY)
+            continue;
+
+        // copy integers from the first vertex
+        int ti = static_cast<int>(t);
+        if (ti > 8) {
+            std::copy_n(
+                reinterpret_cast<const uint32_t *>(vert->attributes + i),
+                ti & 3,
+                reinterpret_cast<int32_t *>(in.attributes + i)
+            );
+            continue;
+        }
+
+        // iterpolate template attributes
+        for (int j = 0; j < ti; ++j) {
+            in.attributes[i].v4[j] =
+                vert[0].attributes[i].v4[j] * pbc.x +
+                vert[1].attributes[i].v4[j] * pbc.y +
+                vert[2].attributes[i].v4[j] * pbc.z;
+        }
+    }
+
+    // call the shader
+    OutFragment out;
+    prog.fragmentShader(out, in, si);
+    size_t p = (size_t)pt.y * frame.width + (size_t)pt.x;
+    /*if (p >= frame.width * frame.height)
+        0;*/
+    color[(size_t)pt.y * frame.width + (size_t)pt.x] =
+        to_rgba(out.gl_FragColor);
 }
 
 template<bool backface>
 inline bool FragmentContext::should_draw() const {
     if constexpr(backface)
-        return abv <= 0 && bcv < 0 && cav <= 0;
-    else // bcv has different condition to pass test 12 (it has no tolerance)
-        return abv >= 0 && bcv > 0 && cav >= 0;
+        return abv <= 0 && bcv <= 0 && cav <= 0;
+    else
+        return abv >= 0 && bcv >= 0 && cav >= 0;
 }
 
 /**
