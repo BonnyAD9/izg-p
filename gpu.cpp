@@ -51,10 +51,10 @@ struct Triangle {
     inline Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c);
     // determines whether the triangle is backface to the camera or not
     inline bool is_backface() const;
-    // gets the area of the triangle
+    // gets double the area of the triangle
     // the template parameter is there to optimize
     template<bool backface>
-    inline float get_area();
+    inline float get_2area();
     // does viewport transform
     inline void to_viewport(size_t width, size_t height);
 
@@ -75,9 +75,14 @@ struct Triangle {
     float area;
 };
 
+// jsut for the type inference for the compiller
+template<bool backface> struct value_t {};
+
 // used for rasterizing triangles
 struct Rasterizer {
+    template<bool backface>
     inline Rasterizer(
+        value_t<backface>,
         const Triangle &t,
         const OutVertex *vert,
         Frame &frame,
@@ -87,6 +92,7 @@ struct Rasterizer {
         bool &failed
     );
     // evaluates the equations at the given point
+    template<bool backface>
     inline void eval_at(const float x, const float y);
     // changes the evaluated point by 1 in the x axis
     inline void add_x();
@@ -123,6 +129,12 @@ struct Rasterizer {
     float abv;
     float bcv;
     float cav;
+    // barycentric coordinates
+    glm::vec3 bcc;
+    // triangle side / triangle area
+    glm::vec2 abd;
+    glm::vec2 bcd;
+    glm::vec2 cad;
     // bottom left bounding box coordinate
     glm::ivec2 bl;
     // top right bounding box coordinate
@@ -372,15 +384,24 @@ static inline void rasterize(
     t.to_viewport(frame.width, frame.height);
 
     // prepare for rasterization
-    t.get_area<backface>();
+    t.get_2area<backface>();
     bool failed;
-    Rasterizer fc{ t, vert, frame, prog, si, fat, failed };
+    Rasterizer fc{
+        value_t<backface>{},
+        t,
+        vert,
+        frame,
+        prog,
+        si,
+        fat,
+        failed
+    };
 
     if (failed)
         return;
 
     for (size_t y = fc.bl.y; y <= fc.tr.y; ++y) {
-        fc.eval_at(fc.bl.x + .5f, y + .5f);
+        fc.eval_at<backface>(fc.bl.x + .5f, y + .5f);
         for (size_t x = fc.bl.x; x <= fc.tr.x; ++x) {
             if (fc.should_draw<backface>()) {
                 fc.draw();
@@ -451,7 +472,7 @@ inline bool Triangle::is_backface() const {
 }
 
 template<bool backface>
-inline float Triangle::get_area() {
+inline float Triangle::get_2area() {
     /* This is derived from the fact that the area of parallelogram is:
      *     A_________D
      *     /        /
@@ -483,9 +504,9 @@ inline float Triangle::get_area() {
      * and not the parallelogram.
      */
     if constexpr(backface)
-        return area = (ab.y * bc.x - ab.x * bc.y) / 2;
+        return area = (ab.y * bc.x - ab.x * bc.y);
     else
-        return area = (ab.x * bc.y - ab.y * bc.x) / 2;
+        return area = (ab.x * bc.y - ab.y * bc.x);
 }
 
 inline void Triangle::to_viewport(size_t width, size_t height) {
@@ -509,7 +530,9 @@ inline void Triangle::to_viewport(size_t width, size_t height) {
     ca.y = a.y - c.y;
 }
 
+template<bool backface>
 inline Rasterizer::Rasterizer(
+    value_t<backface>,
     const Triangle &t,
     const OutVertex *vert,
     Frame &frame,
@@ -542,16 +565,27 @@ inline Rasterizer::Rasterizer(
         return;
     }
 
-    fat.set_arrs(vert);
-
     // make it integers
     this->bl = bl;
     this->tr = tr;
 
+    fat.set_arrs(vert);
+
+    if constexpr(backface) {
+        abd = -t.ab / t.area;
+        bcd = -t.bc / t.area;
+        cad = -t.ca / t.area;
+    } else {
+        abd = t.ab / t.area;
+        bcd = t.bc / t.area;
+        cad = t.ca / t.area;
+    }
+
     // evaluate at initial (bottom left) position
-    eval_at(this->bl.x + .5f, this->bl.y + .5f);
+    eval_at<backface>(this->bl.x + .5f, this->bl.y + .5f);
 }
 
+template<bool backface>
 inline void Rasterizer::eval_at(const float x, const float y) {
     pt = glm::vec2{ x, y };
 
@@ -559,6 +593,16 @@ inline void Rasterizer::eval_at(const float x, const float y) {
     abv = t.ab.x * (y - t.b.y) - t.ab.y * (x - t.b.x);
     bcv = t.bc.x * (y - t.b.y) - t.bc.y * (x - t.b.x);
     cav = t.ca.x * (y - t.c.y) - t.ca.y * (x - t.c.x);
+
+    if constexpr(backface) {
+        bcc.x = ((t.b.y - y) * t.bc.x - (t.b.x - x) * t.bc.y) / t.area;
+        bcc.z = (t.ab.y * (x - t.b.x) - t.ab.x * (y - t.b.y)) / t.area;
+        bcc.y = 1 - bcc.x - bcc.z;
+    } else {
+        bcc.x = ((t.b.x - x) * t.bc.y - (t.b.y - y) * t.bc.x) / t.area;
+        bcc.z = (t.ab.x * (y - t.b.y) - t.ab.y * (x - t.b.x)) / t.area;
+        bcc.y = 1 - bcc.x - bcc.z;
+    }
 }
 
 /* these relations are derived from the side equations, example for side AB:
@@ -583,6 +627,11 @@ inline void Rasterizer::add_x() {
     abv -= t.ab.y;
     bcv -= t.bc.y;
     cav -= t.ca.y;
+
+    // update the barycentric coordinates
+    bcc.x -= bcd.y;
+    bcc.y -= cad.y;
+    bcc.z -= abd.y;
 }
 
 inline void Rasterizer::sub_x() {
@@ -593,6 +642,11 @@ inline void Rasterizer::sub_x() {
     abv += t.ab.y;
     bcv += t.bc.y;
     cav += t.ca.y;
+
+    // update the barycentric coordinates
+    bcc.x += bcd.y;
+    bcc.y += cad.y;
+    bcc.z += abd.y;
 }
 
 inline void Rasterizer::add_y() {
@@ -603,6 +657,11 @@ inline void Rasterizer::add_y() {
     abv += t.ab.x;
     bcv += t.bc.x;
     cav += t.ca.x;
+
+    // update the barycentric coordinates
+    bcc.x -= bcd.x;
+    bcc.y -= cad.x;
+    bcc.z -= abd.x;
 }
 inline void Rasterizer::sub_y() {
     // update the point
@@ -612,33 +671,29 @@ inline void Rasterizer::sub_y() {
     abv -= t.ab.x;
     bcv -= t.bc.x;
     cav -= t.ca.x;
+
+    // update the barycentric coordinates
+    bcc.x += bcd.x;
+    bcc.y += cad.x;
+    bcc.z += abd.x;
 }
 
 inline void Rasterizer::draw() {
-    // calculate barycentric coordinates
-    float m = 1 / t.area;
-    glm::vec3 bc{
-        triangle_area(t.b, t.c, pt) * m,
-        triangle_area(t.a, t.c, pt) * m,
-        0,
-    };
-    bc.z = 1 - bc.x - bc.y;
-
     InFragment in{
         .gl_FragCoord{
             pt.x,
             pt.y,
-            t.a.z * bc.x + t.b.z * bc.y + t.c.z * bc.z,
+            t.a.z * bcc.x + t.b.z * bcc.y + t.c.z * bcc.z,
             1.f,
         },
     };
 
     // get perspective adjusted coordinates
-    float s = bc.x / t.a.w + bc.y / t.b.w + bc.z / t.c.w;
+    float s = bcc.x / t.a.w + bcc.y / t.b.w + bcc.z / t.c.w;
     glm::vec3 pbc{
-        bc.x / (t.a.w * s),
-        bc.y / (t.b.w * s),
-        bc.z / (t.c.w * s),
+        bcc.x / (t.a.w * s),
+        bcc.y / (t.b.w * s),
+        bcc.z / (t.c.w * s),
     };
 
     fat.set_attrib(in.attributes, pbc);
