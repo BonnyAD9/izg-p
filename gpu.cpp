@@ -475,13 +475,13 @@ inline void Triangle::to_viewport(size_t width, size_t height) {
     c.y = (c.y + 1) * ym;
 
     // update the sides
-    get_area();
+    float am = 1 / get_area();
 
     // transform the sides so that when calculating the value of the triangle
     // side equations, it is equal to the barycentric coordinates
-    ab /= area;
-    bc /= area;
-    ca /= area;
+    ab *= am;
+    bc *= am;
+    ca *= am;
 }
 
 inline float Triangle::get_area() {
