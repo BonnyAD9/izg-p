@@ -31,7 +31,7 @@ struct VExtAttrib {
 struct FExtAttrib {
     inline FExtAttrib(const AttributeType *types);
     inline void set_attrib(Attribute *out_attribs, glm::vec3 pbc) const;
-    inline void set_arrs(OutVertex *vout);
+    inline void set_arrs(const OutVertex *vout);
 
     // copied attributes
     size_t ind[maxAttributes];
@@ -81,6 +81,7 @@ struct FragmentContext {
         Frame &frame,
         const Program &prog,
         const ShaderInterface &si,
+        FExtAttrib &fat,
         bool &failed
     );
     // evaluates the equations at the given point
@@ -108,6 +109,8 @@ struct FragmentContext {
     const Program &prog;
     // the constants for shader
     const ShaderInterface &si;
+    // the extracted attributes
+    const FExtAttrib &fat;
     // the frame buffer
     Frame &frame;
     // the current pixel
@@ -157,7 +160,8 @@ static inline void rasterize(
     Frame &frame,
     OutVertex *triangle,
     const Program &prog,
-    const ShaderInterface &si
+    const ShaderInterface &si,
+    FExtAttrib &fat
 );
 
 static inline uint32_t to_rgba(glm::vec4 color);
@@ -273,7 +277,8 @@ static void gpu_draw(
     }
 
     // extract attributes
-    VExtAttrib at{ cmd.vao.vertexAttrib, mem.buffers };
+    VExtAttrib vat{ cmd.vao.vertexAttrib, mem.buffers };
+    FExtAttrib fat{ prog.vs2fs };
 
     // start at 2 and search the vertices backwards to avoid checks that
     // cmd.nofVertices is multiple of 3
@@ -290,7 +295,7 @@ static void gpu_draw(
                 in_vertex.gl_VertexID = i - j;
 
             // run the vertex shader
-            at.set_attrib(in_vertex.gl_VertexID, in_vertex.attributes);
+            vat.set_attrib(in_vertex.gl_VertexID, in_vertex.attributes);
             prog.vertexShader(triangle[2 - j], in_vertex, si);
 
             // perspective division
@@ -310,9 +315,9 @@ static void gpu_draw(
             if constexpr(flags & DRAW_CULLING)
                 continue;
             else
-                rasterize<true>(mem.framebuffer, triangle, prog, si);
+                rasterize<true>(mem.framebuffer, triangle, prog, si, fat);
         } else
-            rasterize<false>(mem.framebuffer, triangle, prog, si);
+            rasterize<false>(mem.framebuffer, triangle, prog, si, fat);
 
     }
 }
@@ -349,7 +354,6 @@ inline void VExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
 }
 
 // TODO: optimize (
-//   pre-select attributes,
 //   recursive barycentric,
 //   minimize searched pixels,
 // )
@@ -358,7 +362,8 @@ static inline void rasterize(
     Frame &frame,
     OutVertex *triangle,
     const Program &prog,
-    const ShaderInterface &si
+    const ShaderInterface &si,
+    FExtAttrib &fat
 ) {
     // viewport transform into a triangle
     float xm = frame.width / 2.f;
@@ -388,7 +393,7 @@ static inline void rasterize(
     // prepare for rasterization
     t.get_area<backface>();
     bool failed;
-    FragmentContext fc{ t, triangle, frame, prog, si, failed };
+    FragmentContext fc{ t, triangle, frame, prog, si, fat, failed };
 
     if (failed)
         return;
@@ -508,13 +513,15 @@ inline FragmentContext::FragmentContext(
     Frame &frame,
     const Program &prog,
     const ShaderInterface &si,
+    FExtAttrib &fat,
     bool &failed
 ) : t(t),
     prog(prog),
     vert(vert),
     color(reinterpret_cast<uint32_t *>(frame.color)),
     si(si),
-    frame(frame)
+    frame(frame),
+    fat(fat)
 {
     failed = false;
 
@@ -532,6 +539,8 @@ inline FragmentContext::FragmentContext(
         failed = true;
         return;
     }
+
+    fat.set_arrs(vert);
 
     // make it integers
     this->bl = bl;
@@ -630,32 +639,7 @@ inline void FragmentContext::draw() {
         bc.z / (t.c.w * s),
     };
 
-    // resolve the attributes
-    for (size_t i = 0; i < maxAttributes; ++i) {
-        // skip attribute
-        AttributeType t = prog.vs2fs[i];
-        if (t == AttributeType::EMPTY)
-            continue;
-
-        // copy integers from the first vertex
-        int ti = static_cast<int>(t);
-        if (ti > 8) {
-            std::copy_n(
-                reinterpret_cast<const uint32_t *>(vert->attributes + i),
-                ti & 3,
-                reinterpret_cast<int32_t *>(in.attributes + i)
-            );
-            continue;
-        }
-
-        // iterpolate template attributes
-        for (int j = 0; j < ti; ++j) {
-            in.attributes[i].v4[j] =
-                vert[0].attributes[i].v4[j] * pbc.x +
-                vert[1].attributes[i].v4[j] * pbc.y +
-                vert[2].attributes[i].v4[j] * pbc.z;
-        }
-    }
+    fat.set_attrib(in.attributes, pbc);
 
     // call the shader
     OutFragment out;
@@ -699,16 +683,19 @@ inline FExtAttrib::FExtAttrib(const AttributeType *types)
     }
 }
 
-inline void FExtAttrib::set_arrs(OutVertex *vout) {
+inline void FExtAttrib::set_arrs(const OutVertex *vout) {
     // non interpolated
     for (size_t i = 0; i < cnt; ++i)
-        arr[i] = reinterpret_cast<uint32_t *>(vout->attributes + ind[i]);
+        arr[i] = reinterpret_cast<const uint32_t *>(vout->attributes + ind[i]);
 
     // interpolated
     for (size_t i = 0; i < icnt; ++i) {
-        iarr[0][i] = reinterpret_cast<float *>(vout[0].attributes + iind[i]);
-        iarr[1][i] = reinterpret_cast<float *>(vout[1].attributes + iind[i]);
-        iarr[2][i] = reinterpret_cast<float *>(vout[2].attributes + iind[i]);
+        iarr[0][i] =
+            reinterpret_cast<const float *>(vout[0].attributes + iind[i]);
+        iarr[1][i] =
+            reinterpret_cast<const float *>(vout[1].attributes + iind[i]);
+        iarr[2][i] =
+            reinterpret_cast<const float *>(vout[2].attributes + iind[i]);
     }
 }
 
