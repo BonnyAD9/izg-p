@@ -594,13 +594,15 @@ inline void Rasterizer::eval_at(const float x, const float y) {
     bcv = t.bc.x * (y - t.b.y) - t.bc.y * (x - t.b.x);
     cav = t.ca.x * (y - t.c.y) - t.ca.y * (x - t.c.x);
 
+    // it turns out that the area of the triangle * 2 is just the evaluation
+    // at the given point - this simplifies things :)
     if constexpr(backface) {
-        bcc.x = ((t.b.y - y) * t.bc.x - (t.b.x - x) * t.bc.y) / t.area;
-        bcc.z = (t.ab.y * (x - t.b.x) - t.ab.x * (y - t.b.y)) / t.area;
+        bcc.x = -bcv / t.area;
+        bcc.z = -abv / t.area;
         bcc.y = 1 - bcc.x - bcc.z;
     } else {
-        bcc.x = ((t.b.x - x) * t.bc.y - (t.b.y - y) * t.bc.x) / t.area;
-        bcc.z = (t.ab.x * (y - t.b.y) - t.ab.y * (x - t.b.x)) / t.area;
+        bcc.x = bcv / t.area;
+        bcc.z = abv / t.area;
         bcc.y = 1 - bcc.x - bcc.z;
     }
 }
