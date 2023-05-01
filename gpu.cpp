@@ -11,8 +11,8 @@
 #include <algorithm>
 
 // used to extract attributes for vertex shader for faster iteration
-struct ExtAttrib {
-    inline ExtAttrib(const VertexAttrib *attributes, const Buffer *buffers);
+struct VExtAttrib {
+    inline VExtAttrib(const VertexAttrib *attributes, const Buffer *buffers);
     inline void set_attrib(size_t index, Attribute *out_attribs) const;
     // the actual indexes
     size_t ind[maxAttributes];
@@ -24,6 +24,26 @@ struct ExtAttrib {
     const char *arr[maxAttributes];
     // number of attributes
     size_t cnt;
+};
+
+// used to extract attributes for fragment shaders
+// simillar to VExtAttrib
+struct FExtAttrib {
+    inline FExtAttrib(const AttributeType *types);
+    inline void set_attrib(Attribute *out_attribs, glm::vec3 pbc) const;
+    inline void set_arrs(OutVertex *vout);
+
+    // copied attributes
+    size_t ind[maxAttributes];
+    size_t siz[maxAttributes];
+    const uint32_t *arr[maxAttributes];
+    size_t cnt;
+
+    // interpolated attributes
+    size_t iind[maxAttributes];
+    size_t isiz[maxAttributes];
+    const float *iarr[3][maxAttributes];
+    size_t icnt;
 };
 
 // contains the points of the triangle and its precalculated edges
@@ -253,7 +273,7 @@ static void gpu_draw(
     }
 
     // extract attributes
-    ExtAttrib at{ cmd.vao.vertexAttrib, mem.buffers };
+    VExtAttrib at{ cmd.vao.vertexAttrib, mem.buffers };
 
     // start at 2 and search the vertices backwards to avoid checks that
     // cmd.nofVertices is multiple of 3
@@ -297,7 +317,7 @@ static void gpu_draw(
     }
 }
 
-inline ExtAttrib::ExtAttrib(
+inline VExtAttrib::VExtAttrib(
     const VertexAttrib *attributes,
     const Buffer *buffers
 ) : cnt(0) {
@@ -318,7 +338,7 @@ inline ExtAttrib::ExtAttrib(
     }
 }
 
-inline void ExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
+inline void VExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
     for (size_t j = 0; j < cnt; ++j) {
         std::copy_n(
             arr[j] + (index * str[j]),
@@ -653,6 +673,67 @@ inline bool FragmentContext::should_draw() const {
         return abv <= 0 && bcv <= 0 && cav <= 0;
     else
         return abv >= 0 && bcv >= 0 && cav >= 0;
+}
+
+inline FExtAttrib::FExtAttrib(const AttributeType *types)
+    : cnt(0), icnt(0)
+{
+    for (size_t i = 0; i < maxAttributes; ++i) {
+        if (types[i] == AttributeType::EMPTY)
+            continue;
+
+        int t = static_cast<int>(types[i]);
+
+        // regular
+        if (t > 8) {
+            ind[cnt] = i;
+            siz[cnt] = t & 3;
+            ++cnt;
+            continue;
+        }
+
+        // interpolated
+        iind[icnt] = i;
+        isiz[icnt] = t;
+        ++icnt;
+    }
+}
+
+inline void FExtAttrib::set_arrs(OutVertex *vout) {
+    // non interpolated
+    for (size_t i = 0; i < cnt; ++i)
+        arr[i] = reinterpret_cast<uint32_t *>(vout->attributes + ind[i]);
+
+    // interpolated
+    for (size_t i = 0; i < icnt; ++i) {
+        iarr[0][i] = reinterpret_cast<float *>(vout[0].attributes + iind[i]);
+        iarr[1][i] = reinterpret_cast<float *>(vout[1].attributes + iind[i]);
+        iarr[2][i] = reinterpret_cast<float *>(vout[2].attributes + iind[i]);
+    }
+}
+
+inline void FExtAttrib::set_attrib(
+    Attribute *out_attribs,
+    glm::vec3 pbc
+) const {
+    // non interpolated
+    for (size_t i = 0; i < cnt; ++i) {
+        std::copy_n(
+            arr[i],
+            siz[i],
+            reinterpret_cast<uint32_t *>(out_attribs + ind[i])
+        );
+    }
+
+    // interpolated
+    for (size_t i = 0; i < icnt; ++i) {
+        for (size_t j = 0; j < isiz[i]; ++j) {
+            out_attribs[iind[i]].v4[j] =
+                iarr[0][i][j] * pbc.x +
+                iarr[1][i][j] * pbc.y +
+                iarr[2][i][j] * pbc.z;
+        }
+    }
 }
 
 /**
