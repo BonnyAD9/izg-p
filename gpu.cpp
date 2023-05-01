@@ -207,6 +207,9 @@ static inline void gpu_draw(
     const DrawCommand &cmd,
     const uint32_t draw_id
 ) {
+    // here are determined things like whether the culling is enabled
+    // so that they can be used as a compile time if expression later in the
+    // code
     if (cmd.vao.indexBufferID < 0) {
         cmd.backfaceCulling
             ? gpu_draw<void, DRAW_CULLING>(mem, cmd, draw_id)
