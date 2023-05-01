@@ -55,6 +55,8 @@ struct Triangle {
     // the template parameter is there to optimize
     template<bool backface>
     inline float get_area();
+    // does viewport transform
+    inline void to_viewport(size_t width, size_t height);
 
     // points of the triangle
     glm::vec4 a;
@@ -73,9 +75,9 @@ struct Triangle {
     float area;
 };
 
-// used for rasterizing
-struct FragmentContext {
-    inline FragmentContext(
+// used for rasterizing triangles
+struct Rasterizer {
+    inline Rasterizer(
         const Triangle &t,
         const OutVertex *vert,
         Frame &frame,
@@ -125,7 +127,6 @@ struct FragmentContext {
     glm::ivec2 bl;
     // top right bounding box coordinate
     glm::ivec2 tr;
-
 };
 
 #define DRAW_INDEXER 0x1
@@ -154,11 +155,12 @@ static inline void gpu_draw(
     const uint32_t draw_id
 );
 
-// rasterizes the given triangle (ndc coordinates) on the frame
+// craetes the Rasterizer and rasterizes the given triangle
 template<bool backface>
 static inline void rasterize(
     Frame &frame,
-    OutVertex *triangle,
+    Triangle t,
+    const OutVertex *vert,
     const Program &prog,
     const ShaderInterface &si,
     FExtAttrib &fat
@@ -310,14 +312,15 @@ static void gpu_draw(
             triangle[2].gl_Position
         };
 
+        // call rasterization function
         if (t.is_backface()) {
             // skip backface triangles if culling is enabled
             if constexpr(flags & DRAW_CULLING)
                 continue;
             else
-                rasterize<true>(mem.framebuffer, triangle, prog, si, fat);
+                rasterize<true>(mem.framebuffer, t, triangle, prog, si, fat);
         } else
-            rasterize<false>(mem.framebuffer, triangle, prog, si, fat);
+            rasterize<false>(mem.framebuffer, t, triangle, prog, si, fat);
 
     }
 }
@@ -360,40 +363,18 @@ inline void VExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
 template<bool backface>
 static inline void rasterize(
     Frame &frame,
-    OutVertex *triangle,
+    Triangle t,
+    const OutVertex *vert,
     const Program &prog,
     const ShaderInterface &si,
     FExtAttrib &fat
 ) {
-    // viewport transform into a triangle
-    float xm = frame.width / 2.f;
-    float ym = frame.height / 2.f;
-
-    Triangle t{
-        glm::vec4{
-            (triangle[0].gl_Position.x + 1) * xm,
-            (triangle[0].gl_Position.y + 1) * ym,
-            triangle [0].gl_Position.z,
-            triangle [0].gl_Position.w,
-        },
-        glm::vec4{
-            (triangle[1].gl_Position.x + 1) * xm,
-            (triangle[1].gl_Position.y + 1) * ym,
-            triangle [1].gl_Position.z,
-            triangle [1].gl_Position.w,
-        },
-        glm::vec4{
-            (triangle[2].gl_Position.x + 1) * xm,
-            (triangle[2].gl_Position.y + 1) * ym,
-            triangle [2].gl_Position.z,
-            triangle [2].gl_Position.w,
-        },
-    };
+    t.to_viewport(frame.width, frame.height);
 
     // prepare for rasterization
     t.get_area<backface>();
     bool failed;
-    FragmentContext fc{ t, triangle, frame, prog, si, fat, failed };
+    Rasterizer fc{ t, vert, frame, prog, si, fat, failed };
 
     if (failed)
         return;
@@ -507,7 +488,28 @@ inline float Triangle::get_area() {
         return area = (ab.x * bc.y - ab.y * bc.x) / 2;
 }
 
-inline FragmentContext::FragmentContext(
+inline void Triangle::to_viewport(size_t width, size_t height) {
+    float xm = width / 2.f;
+    float ym = height / 2.f;
+
+    // transform x and y
+    a.x = (a.x + 1) * xm;
+    a.y = (a.y + 1) * ym;
+    b.x = (b.x + 1) * xm;
+    b.y = (b.y + 1) * ym;
+    c.x = (c.x + 1) * xm;
+    c.y = (c.y + 1) * ym;
+
+    // update the sides
+    ab.x = b.x - a.x;
+    ab.y = b.y - a.y;
+    bc.x = c.x - b.x;
+    bc.y = c.y - b.y;
+    ca.x = a.x - c.x;
+    ca.y = a.y - c.y;
+}
+
+inline Rasterizer::Rasterizer(
     const Triangle &t,
     const OutVertex *vert,
     Frame &frame,
@@ -550,7 +552,7 @@ inline FragmentContext::FragmentContext(
     eval_at(this->bl.x + .5f, this->bl.y + .5f);
 }
 
-inline void FragmentContext::eval_at(const float x, const float y) {
+inline void Rasterizer::eval_at(const float x, const float y) {
     pt = glm::vec2{ x, y };
 
     // the subtraction is reused so that the compiler may optimize it
@@ -573,7 +575,7 @@ inline void FragmentContext::eval_at(const float x, const float y) {
  *   f(x, y - 1) = f(x, y) - t.ab.x
  */
 
-inline void FragmentContext::add_x() {
+inline void Rasterizer::add_x() {
     // update the point
     pt.x += 1;
 
@@ -583,7 +585,7 @@ inline void FragmentContext::add_x() {
     cav -= t.ca.y;
 }
 
-inline void FragmentContext::sub_x() {
+inline void Rasterizer::sub_x() {
     // update the point
     pt.x -= 1;
 
@@ -593,7 +595,7 @@ inline void FragmentContext::sub_x() {
     cav += t.ca.y;
 }
 
-inline void FragmentContext::add_y() {
+inline void Rasterizer::add_y() {
     // update the point
     pt.y += 1;
 
@@ -602,7 +604,7 @@ inline void FragmentContext::add_y() {
     bcv += t.bc.x;
     cav += t.ca.x;
 }
-inline void FragmentContext::sub_y() {
+inline void Rasterizer::sub_y() {
     // update the point
     pt.y -= 1;
 
@@ -612,7 +614,7 @@ inline void FragmentContext::sub_y() {
     cav -= t.ca.x;
 }
 
-inline void FragmentContext::draw() {
+inline void Rasterizer::draw() {
     // calculate barycentric coordinates
     float m = 1 / t.area;
     glm::vec3 bc{
@@ -652,7 +654,7 @@ inline void FragmentContext::draw() {
 }
 
 template<bool backface>
-inline bool FragmentContext::should_draw() const {
+inline bool Rasterizer::should_draw() const {
     if constexpr(backface)
         return abv <= 0 && bcv <= 0 && cav <= 0;
     else
