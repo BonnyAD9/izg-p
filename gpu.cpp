@@ -97,6 +97,8 @@ struct Rasterizer {
     // returns true if the triangle should be drawn, the template parameter
     // is used for optimization
     inline bool should_draw() const;
+    inline void save_pos();
+    inline void load_pos();
 
     // tirangle to draw
     const Triangle &t;
@@ -120,6 +122,13 @@ struct Rasterizer {
     float abv;
     float bcv;
     float cav;
+
+    // save and restore variables
+    glm::vec2 spt;
+    float sabv;
+    float sbcv;
+    float scav;
+
     // bottom left bounding box coordinate
     glm::ivec2 bl;
     // top right bounding box coordinate
@@ -370,14 +379,115 @@ static inline void rasterize(
     if (failed)
         return;
 
-    for (size_t y = fc.bl.y; y <= fc.tr.y; ++y) {
-        fc.eval_at(fc.bl.x + .5f, y + .5f);
-        for (size_t x = fc.bl.x; x <= fc.tr.x; ++x) {
-            if (fc.should_draw()) {
-                fc.draw();
+    int y;
+    int x;
+    for (y = fc.bl.y; y <= fc.tr.y; ++y) {
+        for (x = fc.bl.x; x <= fc.tr.x; ++x) {
+            if (!fc.should_draw()) {
+                fc.add_x();
+                continue;
             }
 
+            // get to the right of the triangle
+            fc.save_pos();
+            fc.draw();
             fc.add_x();
+            for (int x2 = x + 1; x2 <= fc.tr.x && fc.should_draw(); ++x2) {
+                fc.draw();
+                fc.add_x();
+            }
+            fc.load_pos();
+
+            // exit all the cycles
+            goto after_for;
+        }
+
+        if (++y > fc.tr.y)
+            return;
+        fc.add_y();
+
+        for (x = fc.tr.x; x >= fc.bl.x; --x) {
+            if (!fc.should_draw()) {
+                fc.sub_x();
+                continue;
+            }
+
+            fc.draw();
+            fc.sub_x();
+
+            // go to the left while you should draw
+            for (; x >= fc.bl.x && fc.should_draw(); --x) {
+                fc.draw();
+                fc.sub_x();
+            }
+
+            goto after_for;
+        }
+
+        fc.add_y();
+    }
+    return;
+
+    // here cycle only inside the triangle
+after_for:
+    for (++y; y <= fc.tr.y; ++y) {
+        fc.add_y();
+
+        // draw to the left and than to the right
+        if (fc.should_draw()) {
+            fc.draw();
+            fc.save_pos();
+            fc.sub_x();
+            for (int x2 = x - 1; x2 >= fc.bl.x && fc.should_draw(); --x2) {
+                fc.draw();
+                fc.sub_x();
+            }
+            fc.load_pos();
+
+            ++x;
+            fc.add_x();
+        } else { // skip to the right while possible
+            for (; x <= fc.tr.x && !fc.should_draw(); ++x) {
+                fc.add_x();
+            }
+        }
+
+        // draw to the right
+        for (; x <= fc.tr.x && fc.should_draw(); ++x) {
+            fc.draw();
+            fc.add_x();
+        }
+
+        // go one up and do the same in reverse
+        if (++y > fc.tr.y)
+            return;
+        fc.add_y();
+
+        // if there is triangle, save position and go to the right
+        // and restore position
+        if (fc.should_draw()) {
+            fc.draw();
+            fc.save_pos();
+            fc.add_x();
+            for (int x2 = x + 1; x2 <= fc.tr.x && fc.should_draw(); ++x2) {
+                fc.draw();
+                fc.add_x();
+            }
+            fc.load_pos();
+
+            --x;
+            fc.sub_x();
+        } else {
+            // go to the left until you should draw
+            for (; x >= fc.bl.x && !fc.should_draw(); --x) {
+                fc.sub_x();
+            }
+        }
+
+        // then go to the left while you should draw
+        for (; x >= fc.bl.x && fc.should_draw(); --x) {
+            fc.draw();
+            fc.sub_x();
         }
     }
 }
@@ -635,6 +745,20 @@ inline void Rasterizer::draw() {
 
 inline bool Rasterizer::should_draw() const {
     return abv >= 0 && bcv >= 0 && cav >= 0;
+}
+
+inline void Rasterizer::save_pos() {
+    spt = pt;
+    sabv = abv;
+    sbcv = bcv;
+    scav = cav;
+}
+
+inline void Rasterizer::load_pos() {
+    pt = spt;
+    abv = sabv;
+    bcv = sbcv;
+    cav = scav;
 }
 
 inline FExtAttrib::FExtAttrib(const AttributeType *types)
