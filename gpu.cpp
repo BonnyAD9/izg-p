@@ -351,7 +351,6 @@ inline void VExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
 }
 
 // TODO: optimize (
-//   recursive perspective barycentric,
 //   minimize searched pixels,
 // )
 static inline void rasterize(
@@ -485,6 +484,11 @@ inline void Triangle::to_viewport(size_t width, size_t height) {
     ab *= am;
     bc *= am;
     ca *= am;
+
+    // transform division to multiplication
+    a.w = 1 / a.w;
+    b.w = 1 / b.w;
+    c.w = 1 / c.w;
 }
 
 inline float Triangle::get_area() {
@@ -548,7 +552,7 @@ inline void Rasterizer::eval_at(const float x, const float y) {
     // the subtraction is reused so that the compiler may optimize it
     abv = t.ab.x * (y - t.b.y) - t.ab.y * (x - t.b.x);
     bcv = t.bc.x * (y - t.b.y) - t.bc.y * (x - t.b.x);
-    cav = t.ca.x * (y - t.c.y) - t.ca.y * (x - t.c.x);
+    cav = 1 - abv - bcv;
 }
 
 /* these relations are derived from the side equations, example for side AB:
@@ -615,12 +619,8 @@ inline void Rasterizer::draw() {
     };
 
     // get perspective adjusted coordinates
-    float s = bcv / t.a.w + cav / t.b.w + abv / t.c.w;
-    glm::vec3 pbc{
-        bcv / (t.a.w * s),
-        cav / (t.b.w * s),
-        abv / (t.c.w * s),
-    };
+    float s = 1 / (bcv * t.a.w + cav * t.b.w + abv * t.c.w);
+    glm::vec3 pbc{ bcv * t.a.w * s, cav * t.b.w * s, abv * t.c.w * s };
 
     fat.set_attrib(in.attributes, pbc);
 
@@ -628,8 +628,7 @@ inline void Rasterizer::draw() {
     OutFragment out;
     prog.fragmentShader(out, in, si);
     size_t p = (size_t)pt.y * frame.width + (size_t)pt.x;
-    /*if (p >= frame.width * frame.height)
-        0;*/
+
     color[(size_t)pt.y * frame.width + (size_t)pt.x] =
         to_rgba(out.gl_FragColor);
 }
