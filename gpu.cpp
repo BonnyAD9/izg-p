@@ -416,7 +416,7 @@ static inline void rasterize(
             fc.load_pos();
 
             // exit all the cycles
-            goto after_for;
+            goto part_2;
         }
 
         if (++y > fc.tr.y)
@@ -438,14 +438,14 @@ static inline void rasterize(
                 fc.sub_x();
             }
 
-            goto after_for;
+            goto part_2;
         }
 
         fc.add_y();
     }
     return;
 
-after_for:
+part_2:
     // this second part is for staying inside the triangle
     for (++y; y <= fc.tr.y; ++y) {
         fc.add_y();
@@ -756,8 +756,10 @@ inline void Rasterizer::draw() {
     prog.fragmentShader(out, in, si);
     size_t p = (size_t)pt.y * frame.width + (size_t)pt.x;
 
-    color[(size_t)pt.y * frame.width + (size_t)pt.x] =
-        to_rgba(out.gl_FragColor);
+    if (frame.depth[p] > in.gl_FragCoord.z) {
+        frame.depth[p] = in.gl_FragCoord.z;
+        color[p] = to_rgba(out.gl_FragColor);
+    }
 }
 
 inline bool Rasterizer::should_draw() const {
