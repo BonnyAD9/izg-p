@@ -360,7 +360,7 @@ inline void VExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
 }
 
 // TODO: optimize (
-//   minimize searched pixels,
+//   make the code readable
 // )
 static inline void rasterize(
     Frame &frame,
