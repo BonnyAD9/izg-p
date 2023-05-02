@@ -379,8 +379,25 @@ static inline void rasterize(
     if (failed)
         return;
 
+    // the following code is quite complicated, but the idea is simple
+    // when you rasterize the triangle you don't have to check every pixel
+    // when you already find one pixel with the triangle, you can jsut check
+    // the neighbouring pixels.
+    // this algorithm searches for the triangle from the bottom left and
+    // once it finds the triangle, it searches from left to right while
+    // staying inside the triangle:
+    // _________
+    // \<<<<<<<|
+    //  \<>>>>>|
+    //   \<<<<<|
+    //    \<>>>|
+    //     \<<<|
+    //      \<>|
+    //       \<|
+    // >>>>>>>\|
     int y;
     int x;
+    // this first part is for finding the triangle
     for (y = fc.bl.y; y <= fc.tr.y; ++y) {
         for (x = fc.bl.x; x <= fc.tr.x; ++x) {
             if (!fc.should_draw()) {
@@ -428,8 +445,8 @@ static inline void rasterize(
     }
     return;
 
-    // here cycle only inside the triangle
 after_for:
+    // this second part is for staying inside the triangle
     for (++y; y <= fc.tr.y; ++y) {
         fc.add_y();
 
