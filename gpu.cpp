@@ -405,11 +405,6 @@ static inline void rasterize(
                 continue;
             }
 
-            fc.draw();
-
-            ++x;
-            fc.add_x();
-
             // get to the right of the triangle
             for (; x <= fc.tr.x && fc.should_draw(); ++x) {
                 fc.draw();
@@ -424,7 +419,6 @@ static inline void rasterize(
             // if there is triangle, save position and go to the right
             // and restore position
             if (fc.should_draw()) {
-                fc.draw();
                 fc.save_pos();
                 fc.add_x();
                 for (int x2 = x + 1; x2 <= fc.tr.x && fc.should_draw(); ++x2) {
@@ -432,9 +426,6 @@ static inline void rasterize(
                     fc.add_x();
                 }
                 fc.load_pos();
-
-                --x;
-                fc.sub_x();
             } else {
                 // go to the left until you should draw
                 for (; x >= fc.bl.x && !fc.should_draw(); --x) {
@@ -462,9 +453,6 @@ static inline void rasterize(
                 continue;
             }
 
-            fc.draw();
-            fc.sub_x();
-
             // go to the left while you should draw
             for (; x >= fc.bl.x && fc.should_draw(); --x) {
                 fc.draw();
@@ -485,7 +473,6 @@ part_2:
 
         // draw to the left and than to the right
         if (fc.should_draw()) {
-            fc.draw();
             fc.save_pos();
             fc.sub_x();
             for (int x2 = x - 1; x2 >= fc.bl.x && fc.should_draw(); --x2) {
@@ -493,9 +480,6 @@ part_2:
                 fc.sub_x();
             }
             fc.load_pos();
-
-            ++x;
-            fc.add_x();
         } else { // skip to the right while possible
             for (; x <= fc.tr.x && !fc.should_draw(); ++x) {
                 fc.add_x();
@@ -516,7 +500,6 @@ part_2:
         // if there is triangle, save position and go to the right
         // and restore position
         if (fc.should_draw()) {
-            fc.draw();
             fc.save_pos();
             fc.add_x();
             for (int x2 = x + 1; x2 <= fc.tr.x && fc.should_draw(); ++x2) {
@@ -524,9 +507,6 @@ part_2:
                 fc.add_x();
             }
             fc.load_pos();
-
-            --x;
-            fc.sub_x();
         } else {
             // go to the left until you should draw
             for (; x >= fc.bl.x && !fc.should_draw(); --x) {
