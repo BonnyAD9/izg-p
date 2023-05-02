@@ -405,15 +405,48 @@ static inline void rasterize(
                 continue;
             }
 
-            // get to the right of the triangle
-            fc.save_pos();
             fc.draw();
+
+            ++x;
             fc.add_x();
-            for (int x2 = x + 1; x2 <= fc.tr.x && fc.should_draw(); ++x2) {
+
+            // get to the right of the triangle
+            for (; x <= fc.tr.x && fc.should_draw(); ++x) {
                 fc.draw();
                 fc.add_x();
             }
-            fc.load_pos();
+
+            // go one up and do the same in reverse
+            if (++y > fc.tr.y)
+                return;
+            fc.add_y();
+
+            // if there is triangle, save position and go to the right
+            // and restore position
+            if (fc.should_draw()) {
+                fc.draw();
+                fc.save_pos();
+                fc.add_x();
+                for (int x2 = x + 1; x2 <= fc.tr.x && fc.should_draw(); ++x2) {
+                    fc.draw();
+                    fc.add_x();
+                }
+                fc.load_pos();
+
+                --x;
+                fc.sub_x();
+            } else {
+                // go to the left until you should draw
+                for (; x >= fc.bl.x && !fc.should_draw(); --x) {
+                    fc.sub_x();
+                }
+            }
+
+            // then go to the left while you should draw
+            for (; x >= fc.bl.x && fc.should_draw(); --x) {
+                fc.draw();
+                fc.sub_x();
+            }
 
             // exit all the cycles
             goto part_2;
