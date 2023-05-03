@@ -418,6 +418,9 @@ static inline void rasterize(
 
             fc.draw_right();
 
+            if (!fc.move_up())
+                return;
+
             if (fc.should_draw()) {
                 fc.draw();
 
