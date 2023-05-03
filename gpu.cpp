@@ -413,10 +413,63 @@ static inline void rasterize(
 
     // this first part is for finding the triangle
     do {
-        if (fc.skip_right()) {
-            fc.draw();
+        do {
+            if (fc.should_draw() || fc.skip_right()) {
+                fc.draw();
 
-            fc.draw_right();
+                fc.draw_right();
+
+                if (!fc.move_up())
+                    return;
+
+                if (fc.should_draw()) {
+                    fc.draw();
+
+                    fc.save_pos();
+                    fc.draw_right();
+                    fc.load_pos();
+
+                    fc.draw_left();
+                    break;
+                }
+
+                fc.save_pos();
+                if (fc.skip_left()) {
+                    fc.draw();
+
+                    fc.draw_left();
+                    break;
+                }
+
+                fc.load_pos();
+                if (!fc.skip_right()) {
+                    // in this case, the triangle is some kind of degenerate
+                    // because the triangle is only one pixel high, but the
+                    // bounding box is higher
+                    return;
+                }
+                fc.draw();
+                fc.draw_right();
+                fc.load_pos();
+
+                break;
+            }
+
+            if (!fc.move_up())
+                return;
+
+            if (fc.should_draw()) {
+                fc.draw();
+
+                fc.draw_left();
+                break;
+            }
+
+            if (!fc.skip_left())
+                continue;
+
+            fc.draw();
+            fc.draw_left();
 
             if (!fc.move_up())
                 return;
@@ -432,74 +485,62 @@ static inline void rasterize(
                 break;
             }
 
-            fc.save_pos();
-            if (fc.skip_left()) {
+            if (fc.skip_right()) {
                 fc.draw();
 
-                fc.draw_left();
+                fc.save_pos();
+                fc.draw_right();
+                fc.load_pos();
                 break;
             }
 
-            fc.load_pos();
-            if (!fc.skip_right()) {
-                // in this case, the triangle is some kind of degenerate
-                // because the triangle is only one pixel high, but the
-                // bounding box is higher
-                return;
-            }
-            fc.draw();
-            fc.draw_right();
-            fc.load_pos();
-
-            break;
-        }
-
-        if (!fc.move_up())
-            return;
-
-        if (fc.should_draw()) {
-            fc.draw();
-
-            fc.draw_left();
-            break;
-        }
-
-        if (!fc.skip_left())
-            continue;
-
-        fc.draw_left();
-
-        break;
-    } while (fc.move_up());
-
-    while (fc.move_up()) {
-        if (fc.should_draw()) {
-            fc.save_pos();
-            fc.draw_left();
-            fc.load_pos();
-        } else {
-            if (!fc.skip_right())
-                return;
-        }
-
-        fc.draw();
-        fc.draw_right();
-
-        if (!fc.move_up())
-            return;
-
-        if (fc.should_draw()) {
-            fc.save_pos();
-            fc.draw_right();
-            fc.load_pos();
-        } else {
             if (!fc.skip_left())
-                return;
-        }
+                continue;
 
-        fc.draw();
-        fc.draw_left();
-    }
+            fc.draw();
+            fc.draw_left();
+
+            break;
+        } while (fc.move_up());
+
+        while (fc.move_up()) {
+            if (fc.should_draw()) {
+                fc.save_pos();
+                fc.draw_left();
+                fc.load_pos();
+            } else {
+                if (!fc.skip_right()) {
+                    if (!fc.move_up())
+                        return;
+
+                    if (fc.should_draw() || fc.skip_left()) {
+                        fc.draw();
+                        fc.draw_left();
+                        continue;
+                    }
+                    break;
+                }
+            }
+
+            fc.draw();
+            fc.draw_right();
+
+            if (!fc.move_up())
+                return;
+
+            if (fc.should_draw()) {
+                fc.save_pos();
+                fc.draw_right();
+                fc.load_pos();
+            } else {
+                if (!fc.skip_left())
+                    break;
+            }
+
+            fc.draw();
+            fc.draw_left();
+        }
+    } while (fc.move_up());
 }
 
 static inline uint32_t to_rgba(const glm::vec4 color) {
@@ -659,6 +700,8 @@ inline Rasterizer::Rasterizer(
     // make it integers
     this->bl = bl;
     this->tr = tr;
+    //this->tr.x = std::ceil(tr.x);
+    //this->tr.y = std::ceil(tr.y);
     px = bl;
 
     fat.set_arrs(vert);
