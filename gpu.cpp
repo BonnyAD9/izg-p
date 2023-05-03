@@ -9,6 +9,7 @@
 
 #include <student/gpu.hpp>
 #include <algorithm>
+#include <iostream>
 
 // used to extract attributes for vertex shader for faster iteration
 struct VExtAttrib {
@@ -105,6 +106,9 @@ struct Rasterizer {
     inline bool draw_left();
     inline bool skip_right();
     inline bool skip_left();
+    // move up with both px and pt, return true if this is outside of bounding
+    // box, if this returns false, px and pt are different
+    inline bool move_up();
 
     // tirangle to draw
     const Triangle &t;
@@ -406,130 +410,92 @@ static inline void rasterize(
     //      \<>|
     //       \<|
     // >>>>>>>\|
-    int y;
-    int x;
+
     // this first part is for finding the triangle
-    for (y = fc.bl.y; y <= fc.tr.y; ++y) {
-        for (x = fc.bl.x; x <= fc.tr.x; ++x) {
-            if (!fc.should_draw()) {
-                fc.add_x();
-                continue;
-            }
-
-            // get to the right of the triangle
-            for (; x <= fc.tr.x && fc.should_draw(); ++x) {
-                fc.draw();
-                fc.add_x();
-            }
-
-            // go one up and do the same in reverse
-            if (++y > fc.tr.y)
-                return;
-            fc.add_y();
-
-            // if there is triangle, save position and go to the right
-            // and restore position
-            if (fc.should_draw()) {
-                fc.save_pos();
-                fc.add_x();
-                for (int x2 = x + 1; x2 <= fc.tr.x && fc.should_draw(); ++x2) {
-                    fc.draw();
-                    fc.add_x();
-                }
-                fc.load_pos();
-            } else {
-                // go to the left until you should draw
-                for (; x >= fc.bl.x && !fc.should_draw(); --x) {
-                    fc.sub_x();
-                }
-            }
-
-            // then go to the left while you should draw
-            for (; x >= fc.bl.x && fc.should_draw(); --x) {
-                fc.draw();
-                fc.sub_x();
-            }
-
-            // exit all the cycles
-            goto part_2;
-        }
-
-        if (++y > fc.tr.y)
-            return;
-        fc.add_y();
-
-        for (x = fc.tr.x; x >= fc.bl.x; --x) {
-            if (!fc.should_draw()) {
-                fc.sub_x();
-                continue;
-            }
-
-            // go to the left while you should draw
-            for (; x >= fc.bl.x && fc.should_draw(); --x) {
-                fc.draw();
-                fc.sub_x();
-            }
-
-            goto part_2;
-        }
-
-        fc.add_y();
-    }
-    return;
-
-part_2:
-    // this second part is for staying inside the triangle
-    for (++y; y <= fc.tr.y; ++y) {
-        fc.add_y();
-
-        // draw to the left and than to the right
-        if (fc.should_draw()) {
-            fc.save_pos();
-            fc.sub_x();
-            for (int x2 = x - 1; x2 >= fc.bl.x && fc.should_draw(); --x2) {
-                fc.draw();
-                fc.sub_x();
-            }
-            fc.load_pos();
-        } else { // skip to the right while possible
-            for (; x <= fc.tr.x && !fc.should_draw(); ++x) {
-                fc.add_x();
-            }
-        }
-
-        // draw to the right
-        for (; x <= fc.tr.x && fc.should_draw(); ++x) {
+    do {
+        if (fc.skip_right()) {
             fc.draw();
-            fc.add_x();
+
+            fc.draw_right();
+
+            if (fc.should_draw()) {
+                fc.draw();
+
+                fc.save_pos();
+                fc.draw_right();
+                fc.load_pos();
+
+                fc.draw_left();
+                break;
+            }
+
+            fc.save_pos();
+            if (fc.skip_left()) {
+                fc.draw();
+
+                fc.draw_left();
+                break;
+            }
+
+            fc.load_pos();
+            if (!fc.skip_right()) {
+                // in this case, the triangle is some kind of degenerate
+                // because the triangle is only one pixel high, but the
+                // bounding box is higher
+                return;
+            }
+            fc.draw();
+            fc.draw_right();
+            fc.load_pos();
+
+            break;
         }
 
-        // go one up and do the same in reverse
-        if (++y > fc.tr.y)
+        if (!fc.move_up())
             return;
-        fc.add_y();
 
-        // if there is triangle, save position and go to the right
-        // and restore position
+        if (fc.should_draw()) {
+            fc.draw();
+
+            fc.draw_left();
+            break;
+        }
+
+        if (!fc.skip_left())
+            continue;
+
+        fc.draw_left();
+
+        break;
+    } while (fc.move_up());
+
+    while (fc.move_up()) {
         if (fc.should_draw()) {
             fc.save_pos();
-            fc.add_x();
-            for (int x2 = x + 1; x2 <= fc.tr.x && fc.should_draw(); ++x2) {
-                fc.draw();
-                fc.add_x();
-            }
+            fc.draw_left();
             fc.load_pos();
         } else {
-            // go to the left until you should draw
-            for (; x >= fc.bl.x && !fc.should_draw(); --x) {
-                fc.sub_x();
-            }
+            if (!fc.skip_right())
+                return;
         }
 
-        // then go to the left while you should draw
-        for (; x >= fc.bl.x && fc.should_draw(); --x) {
-            fc.draw();
-            fc.sub_x();
+        fc.draw();
+        fc.draw_right();
+
+        if (!fc.move_up())
+            return;
+
+        if (fc.should_draw()) {
+            fc.save_pos();
+            fc.draw_right();
+            fc.load_pos();
+        } else {
+            if (!fc.skip_left())
+                return;
         }
+
+        fc.draw();
+        fc.draw_left();
     }
 }
 
@@ -779,7 +745,7 @@ inline void Rasterizer::draw() {
     // call the shader
     OutFragment out;
     prog.fragmentShader(out, in, si);
-    size_t p = (size_t)pt.y * frame.width + (size_t)pt.x;
+    size_t p = px.y * frame.width + px.x;
 
     if (frame.depth[p] > in.gl_FragCoord.z) {
         frame.depth[p] = in.gl_FragCoord.z;
@@ -850,6 +816,13 @@ inline bool Rasterizer::skip_left() {
     }
     ++px.x;
     return false;
+}
+
+inline bool Rasterizer::move_up() {
+    if (++px.y > tr.y)
+        return false;
+    add_y();
+    return true;
 }
 
 inline FExtAttrib::FExtAttrib(const AttributeType *types)
