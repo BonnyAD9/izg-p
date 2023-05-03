@@ -99,6 +99,12 @@ struct Rasterizer {
     inline bool should_draw() const;
     inline void save_pos();
     inline void load_pos();
+    // functions that draw lines from the current position
+    // they return true if they stop on pixel (not bounding box)
+    inline bool draw_right();
+    inline bool draw_left();
+    inline bool skip_right();
+    inline bool skip_left();
 
     // tirangle to draw
     const Triangle &t;
@@ -112,8 +118,12 @@ struct Rasterizer {
     const FExtAttrib &fat;
     // the frame buffer
     Frame &frame;
-    // the current pixel
+    // the current pixel (float coordinates)
     glm::vec2 pt;
+    // the current pixel (int coordinates)
+    // it is not synchronized with the pt, but should be when calling the draw
+    // function
+    glm::ivec2 px;
     // the color buffer
     uint32_t *color;
     // values of triangle side equations of pt
@@ -125,6 +135,7 @@ struct Rasterizer {
 
     // save and restore variables
     glm::vec2 spt;
+    glm::ivec2 spx;
     float sabv;
     float sbcv;
     float scav;
@@ -679,6 +690,7 @@ inline Rasterizer::Rasterizer(
     // make it integers
     this->bl = bl;
     this->tr = tr;
+    px = bl;
 
     fat.set_arrs(vert);
 
@@ -781,6 +793,7 @@ inline bool Rasterizer::should_draw() const {
 
 inline void Rasterizer::save_pos() {
     spt = pt;
+    spx = px;
     sabv = abv;
     sbcv = bcv;
     scav = cav;
@@ -788,9 +801,55 @@ inline void Rasterizer::save_pos() {
 
 inline void Rasterizer::load_pos() {
     pt = spt;
+    px = spx;
     abv = sabv;
     bcv = sbcv;
     cav = scav;
+}
+
+// these funcions draw lines and ensure that both px and pt stay inside the
+// bounding box of the triangle. They don't do anything with the current pixel
+inline bool Rasterizer::draw_right() {
+    for (++px.x; px.x <= tr.x; ++px.x) {
+        add_x();
+        if (!should_draw())
+            return true;
+        draw();
+    }
+    --px.x;
+    return false;
+}
+
+inline bool Rasterizer::draw_left() {
+    for (--px.x; px.x >= bl.x; --px.x) {
+        sub_x();
+        if (!should_draw())
+            return true;
+        draw();
+    }
+    ++px.x;
+    return false;
+}
+
+inline bool Rasterizer::skip_right() {
+    for (++px.x; px.x <= tr.x; ++px.x) {
+        add_x();
+        if (should_draw())
+            return true;
+    }
+    --px.x;
+    return false;
+}
+
+
+inline bool Rasterizer::skip_left() {
+    for (--px.x; px.x >= bl.x; --px.x) {
+        sub_x();
+        if (should_draw())
+            return true;
+    }
+    ++px.x;
+    return false;
 }
 
 inline FExtAttrib::FExtAttrib(const AttributeType *types)
