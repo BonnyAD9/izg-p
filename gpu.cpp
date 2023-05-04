@@ -411,134 +411,203 @@ static inline void rasterize(
     //       \<|
     // >>>>>>>\|
 
+    // comment legend:
+    // ?   unknown position
+    // > < empty position traversed in direction
+    // *   filled position
+    // +   current filled position
+    // /   current empty position
+    // .   current unknown position
+#define fc_move_up() if (!fc.move_up()) return;
     // this first part is for finding the triangle
     do {
         do {
+            // ????????????
             if (fc.should_draw() || fc.skip_right()) {
+                // >>>>*???????
                 fc.draw();
-
                 fc.draw_right();
+                // >>>>+++*----
 
-                if (!fc.move_up())
-                    return;
+                fc_move_up();
+                // ???????.????
+                // >>>>****----
 
                 if (fc.should_draw()) {
                     fc.draw();
-
                     fc.save_pos();
                     fc.draw_right();
                     fc.load_pos();
-
                     fc.draw_left();
+                    // --+*******--
+                    // >>>>****----
                     break;
                 }
+                // ???????/????
+                // >>>>****----
 
                 fc.save_pos();
                 if (fc.skip_left()) {
                     fc.draw();
-
                     fc.draw_left();
+                    // --+***<<----
+                    // >>>>****----
+                    break;
+                }
+                fc.load_pos();
+                // -------/????
+                // >>>>****----
+
+                if (fc.skip_right()) {
+                    fc.draw();
+                    fc.save_pos();
+                    fc.draw_right();
+                    fc.load_pos();
+                    // ------->>+*-
+                    // >>>>****----
+                    break;
+                }
+                // ------->>>>/
+                // >>>>****----
+
+                fc_move_up();
+                // ???????????.
+                // ------->>>>/
+                // >>>>****----
+
+                if (fc.should_draw() || fc.skip_left()) {
+                    fc.draw();
+                    fc.draw_left();
+                    // ----+***<<<<
+                    // ------->>>>/
+                    // >>>>****----
                     break;
                 }
 
-                fc.load_pos();
-                if (!fc.skip_right()) {
-                    // in this case, the triangle is some kind of degenerate
-                    // because the triangle is only one pixel high, but the
-                    // bounding box is higher
-                    return;
-                }
-                fc.draw();
-                fc.draw_right();
-                fc.load_pos();
-
-                break;
-            }
-
-            if (!fc.move_up())
-                return;
-
-            if (fc.should_draw()) {
-                fc.draw();
-
-                fc.draw_left();
-                break;
-            }
-
-            if (!fc.skip_left())
+                // /<<<<<<<<<<<
+                // ------->>>>/
+                // >>>>****----
                 continue;
+            }
+            // >>>>>>>>>>>/
 
-            fc.draw();
-            fc.draw_left();
+            fc_move_up();
+            // ???????????.
+            // >>>>>>>>>>>>
 
-            if (!fc.move_up())
-                return;
-
-            if (fc.should_draw()) {
+            if (fc.should_draw() || fc.skip_left()) {
                 fc.draw();
-
-                fc.save_pos();
-                fc.draw_right();
-                fc.load_pos();
-
                 fc.draw_left();
+                // ----+***<<<<
+                // >>>>>>>>>>>>
                 break;
             }
-
-            if (fc.skip_right()) {
-                fc.draw();
-
-                fc.save_pos();
-                fc.draw_right();
-                fc.load_pos();
-                break;
-            }
-
-            if (!fc.skip_left())
-                continue;
-
-            fc.draw();
-            fc.draw_left();
-
-            break;
+            // /<<<<<<<<<<<
+            // >>>>>>>>>>>>
         } while (fc.move_up());
+        // ----+***----
 
         while (fc.move_up()) {
+            // ????.???????
+            // ----****----
+
             if (fc.should_draw()) {
+                fc.draw();
                 fc.save_pos();
                 fc.draw_left();
                 fc.load_pos();
+                fc.draw_right();
+                // --******+???
+                // ----****----
+                continue;
             } else {
-                if (!fc.skip_right()) {
-                    if (!fc.move_up())
-                        return;
+                // ????/???????
+                // ----****----
+                fc.save_pos();
+                if (fc.skip_left()) {
+                    fc.draw();
+                    fc.draw_left();
+                    // -+*<<-------
+                    // ----****----
+                    continue;
+                }
+                fc.load_pos();
+                // ----/???????
+                // ----****----
 
-                    if (fc.should_draw() || fc.skip_left()) {
+                if (!fc.skip_right()) {
+                    fc_move_up();
+                    // ???????????.
+                    // ---->>>>>>>>
+                    // ----****----
+
+                    if (fc.skip_left()) {
                         fc.draw();
                         fc.draw_left();
+                        // ----+***<<<<
+                        // ---->>>>>>>>
+                        // ----****----
                         continue;
                     }
+
+                    // /<<<<<<<<<<<
+                    // ---->>>>>>>>
+                    // ----****----
                     break;
                 }
+                // ---->>>+????
+                // ----****----
+
+                fc.draw();
+                fc.draw_right();
+                // ---->>>**+--
+                // ----****----
             }
+            // ----***+----
 
-            fc.draw();
-            fc.draw_right();
-
-            if (!fc.move_up())
-                return;
+            fc_move_up();
+            // ???????.????
+            // ----****----
 
             if (fc.should_draw()) {
+                fc.draw();
                 fc.save_pos();
                 fc.draw_right();
                 fc.load_pos();
-            } else {
-                if (!fc.skip_left())
-                    break;
+                fc.draw_left();
+                // --+*******--
+                // ----****----
+                continue;
             }
+            // ???????/????
+            // ----****----
+
+            fc.save_pos();
+            if (fc.skip_right()) {
+                fc.draw();
+                fc.save_pos();
+                fc.draw_right();
+                fc.load_pos();
+                // ------->>+*-
+                // ----****----
+                continue;
+            }
+            fc.load_pos();
+            // ???????/----
+            // ----****----
+
+            if (!fc.skip_left()) {
+                // /-----------
+                // ----****----
+                break;
+            }
+            // ?????+<<----
+            // ----****----
 
             fc.draw();
             fc.draw_left();
+            // ??+***<<----
+            // ----****----
         }
     } while (fc.move_up());
 }
