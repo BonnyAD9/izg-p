@@ -541,7 +541,7 @@ static inline void rasterize(
                     // ---->>>>>>>>
                     // ----****----
 
-                    if (fc.skip_left()) {
+                    if (fc.should_draw() || fc.skip_left()) {
                         fc.draw();
                         fc.draw_left();
                         // ----+***<<<<
