@@ -410,6 +410,16 @@ static inline void rasterize(
     //      \<>|
     //       \<|
     // >>>>>>>\|
+    //
+    // in reality the algorithm is much more complicated because of all the
+    // edge cases (such as triangles that skip some lines):
+    //     *
+    //     **
+    //      *
+    //
+    //       *
+    //
+    //        *
 
     // comment legend:
     // ?   unknown position
