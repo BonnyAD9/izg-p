@@ -190,6 +190,15 @@ static inline uint32_t to_rgba(glm::vec4 color);
 
 static inline glm::vec4 from_rgba(const uint32_t color);
 
+static inline void clip_near_and_rasterize(
+    Frame &frame,
+    Triangle t,
+    const OutVertex *vert,
+    const Program &prog,
+    const ShaderInterface &si,
+    FExtAttrib &fat
+);
+
 //! [gpu_execute]
 void gpu_execute(GPUMemory &mem, CommandBuffer &cb) {
     uint32_t draw_id = UINT32_MAX;
@@ -1026,6 +1035,49 @@ inline void FExtAttrib::set_attrib(
                 iarr[1][i][j] * pbc.y +
                 iarr[2][i][j] * pbc.z;
         }
+    }
+}
+
+static inline void clip_near_and_rasterize(
+    Frame &frame,
+    Triangle t,
+    const OutVertex *vert,
+    const Program &prog,
+    const ShaderInterface &si,
+    FExtAttrib &fat
+) {
+    glm::vec4 pts[] = { t.a, t.b, t.c };
+    size_t pc = 0;
+    glm::vec4 clp[3];
+    size_t cc = 0;
+
+    // get clipped and unclipped triangles
+    for (size_t i = 0; i < 3; ++i) {
+        if (   -pts[i].w <= pts[i].x <= pts[i].w
+            && -pts[i].w <= pts[i].y <= pts[i].w
+            && -pts[i].w <= pts[i].z <= pts[i].w
+        ) {
+            pts[pc++] = pts[i];
+            continue;
+        }
+
+        clp[cc++] = pts[i];
+    }
+
+    switch (cc) {
+    case 0: // triangle is not clipped
+        rasterize(frame, t, vert, prog, si, fat);
+        return;
+    case 1: { // one point is outside
+        // TODO
+    }
+        return;
+    case 2: { // two points are outside
+        // TODO
+    }
+        return;
+    case 3: // triangle is behind the camera
+        return;
     }
 }
 
