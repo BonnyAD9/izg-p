@@ -134,8 +134,13 @@ void prepare_nodes(
         const Node node = std::move(nodes.back());
         nodes.pop_back();
 
-        mats.push_back(mats.back() * node.modelMatrix);
-        pids.push_back(nodes.size());
+        // minimize the stacks
+        if (nodes.size() == pids.back()) {
+            mats.back() *= node.modelMatrix;
+        } else {
+            mats.push_back(mats.back() * node.modelMatrix);
+            pids.push_back(nodes.size());
+        }
 
         if (node.mesh >= 0) {
             const Mesh &mesh = model.meshes[node.mesh];
