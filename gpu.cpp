@@ -1077,10 +1077,7 @@ static inline void clip_near_and_rasterize(
 
     // get clipped and unclipped triangles
     for (size_t i = 0; i < 3; ++i) {
-        if (   -t[i].w <= t[i].x && t[i].x <= t[i].w
-            && -t[i].w <= t[i].y && t[i].y <= t[i].w
-            && -t[i].w <= t[i].z && t[i].z <= t[i].w
-        ) {
+        if (-t[i].w <= t[i].z) {
             f[fc++] = i;
             continue;
         }
