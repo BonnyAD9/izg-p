@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "Debug",
             "program": "${workspaceFolder}/../build/izgProject",
-            "args": [ "-c", "--test", "13" ],
+            "args": [ "-c", "--test", "38" ],
             "cwd": "${workspaceFolder}"
         }
     ]

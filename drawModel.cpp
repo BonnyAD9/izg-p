@@ -8,6 +8,7 @@
  */
 #include <student/drawModel.hpp>
 #include <student/gpu.hpp>
+#include <iostream>
 
 ///\endcond
 void drawModel_vertexShader(
@@ -22,13 +23,10 @@ void drawModel_fragmentShader(
     ShaderInterface const &si
 );
 
-void prepare_node(
+void prepare_nodes(
     GPUMemory &mem,
     CommandBuffer &cb,
-    Node const &node,
-    Model const &model,
-    glm::mat4 const &mat,
-    size_t &id
+    Model const &model
 );
 
 /**
@@ -64,10 +62,7 @@ void prepareModel(
 
     pushClearCommand(commandBuffer, glm::vec4{ .1, .15, .1, 1 });
 
-    size_t id = SIZE_MAX;
-    for (const Node &n : model.roots) {
-        prepare_node(mem, commandBuffer, n, model, glm::mat4{ 1 }, ++id);
-    }
+    prepare_nodes(mem, commandBuffer, model);
 }
 //! [drawModel]
 
@@ -114,45 +109,64 @@ void drawModel_fragmentShader(
     /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
 }
 //! [drawModel_fs]
-void prepare_node(
+void prepare_nodes(
     GPUMemory &mem,
     CommandBuffer &cb,
-    Node const &node,
-    Model const &model,
-    glm::mat4 const &mat,
-    size_t &id
+    Model const &model
 ) {
-    auto nmat = mat * node.modelMatrix;
+    // use stacks on heap instead of recursion
 
-    if (node.mesh >= 0) {
-        const Mesh &mesh = model.meshes[node.mesh];
+    // copy the nodes to prevent modifying the original vector
+    std::vector<Node> nodes{ model.roots.rbegin(), model.roots.rend() };
+    // contains matrixes
+    std::vector<glm::mat4> mats = { glm::mat4{ 1 } };
+    // contains pop indexes for matrixes
+    std::vector<size_t> pids = { 0 };
 
-        mem.uniforms[5 * id + 10].m4 = nmat;
-        mem.uniforms[5 * id + 11].m4 = glm::transpose(glm::inverse(nmat));
-        mem.uniforms[5 * id + 12].v4 = mesh.diffuseColor;
-        mem.uniforms[5 * id + 13].i1 = mesh.diffuseTexture;
-        mem.uniforms[5 * id + 14].v1 = mesh.doubleSided;
+    size_t id = SIZE_MAX;
+    while (nodes.size()) {
+        while (pids.back() >= nodes.size()) {
+            pids.pop_back();
+            mats.pop_back();
+        }
 
-        pushDrawCommand(
-            cb,
-            mesh.nofIndices,
-            0,
-            VertexArray{
-                .vertexAttrib {
-                    mesh.position,
-                    mesh.normal,
-                    mesh.texCoord,
+        ++id;
+        const Node node = std::move(nodes.back());
+        nodes.pop_back();
+
+        mats.push_back(mats.back() * node.modelMatrix);
+        pids.push_back(nodes.size());
+
+        if (node.mesh >= 0) {
+            const Mesh &mesh = model.meshes[node.mesh];
+            static size_t cnt = 0;
+
+            mem.uniforms[5 * id + 10].m4 = mats.back();
+            mem.uniforms[5 * id + 11].m4 =
+                glm::transpose(glm::inverse(mats.back()));
+            mem.uniforms[5 * id + 12].v4 = mesh.diffuseColor;
+            mem.uniforms[5 * id + 13].i1 = mesh.diffuseTexture;
+            mem.uniforms[5 * id + 14].v1 = mesh.doubleSided;
+
+            pushDrawCommand(
+                cb,
+                mesh.nofIndices,
+                0,
+                VertexArray{
+                    .vertexAttrib {
+                        mesh.position,
+                        mesh.normal,
+                        mesh.texCoord,
+                    },
+                    .indexBufferID = mesh.indexBufferID,
+                    .indexOffset = mesh.indexOffset,
+                    .indexType = mesh.indexType,
                 },
-                .indexBufferID = mesh.indexBufferID,
-                .indexOffset = mesh.indexOffset,
-                .indexType = mesh.indexType,
-            },
-            !mesh.doubleSided
-        );
-    }
+                !mesh.doubleSided
+            );
+        }
 
-    for (const Node &n : node.children) {
-        prepare_node(mem, cb, n, model, nmat, ++id);
+        nodes.insert(nodes.end(), node.children.rbegin(), node.children.rend());
     }
 }
 
