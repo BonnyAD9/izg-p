@@ -350,7 +350,7 @@ static void gpu_draw(
                 continue;
         }
 
-        rasterize(mem.framebuffer, t, triangle, prog, si, fat);
+        clip_near_and_rasterize(mem.framebuffer, t, triangle, prog, si, fat);
     }
 }
 
