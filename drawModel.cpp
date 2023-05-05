@@ -45,10 +45,14 @@ void prepareModel(
     (void)mem;
     (void)commandBuffer;
     (void)model;
-    /// \todo Tato funkce připraví command buffer pro model a nastaví správně pamět grafické karty.<br>
-    /// Vaším úkolem je správně projít model a vložit vykreslovací příkazy do commandBufferu.
-    /// Zároveň musíte vložit do paměti textury, buffery a uniformní proměnné, které buffer command buffer využívat.
-    /// Bližší informace jsou uvedeny na hlavní stránce dokumentace a v testech.
+    /// \todo Tato funkce připraví command buffer pro model a nastaví správně
+    /// pamět grafické karty.<br>
+    /// Vaším úkolem je správně projít model a vložit vykreslovací příkazy do
+    /// commandBufferu.
+    /// Zároveň musíte vložit do paměti textury, buffery a uniformní proměnné,
+    /// které buffer command buffer využívat.
+    /// Bližší informace jsou uvedeny na hlavní stránce dokumentace a v
+    /// testech.
 
     // set the memory
     std::copy(model.buffers.begin(), model.buffers.end(), mem.buffers);
@@ -105,7 +109,8 @@ void drawModel_fragmentShader(
     (void)inFragment;
     (void)si;
     /// \todo Tato funkce reprezentujte fragment shader.<br>
-    /// Vaším úkolem je správně obarvit fragmenty a osvětlit je pomocí lambertova osvětlovacího modelu.
+    /// Vaším úkolem je správně obarvit fragmenty a osvětlit je pomocí
+    /// lambertova osvětlovacího modelu.
     /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
 }
 //! [drawModel_fs]
@@ -171,7 +176,11 @@ void prepare_nodes(
             );
         }
 
-        nodes.insert(nodes.end(), node.children.rbegin(), node.children.rend());
+        nodes.insert(
+            nodes.end(),
+            node.children.rbegin(),
+            node.children.rend()
+        );
     }
 }
 
