@@ -27,26 +27,6 @@ struct VExtAttrib {
     size_t cnt;
 };
 
-// used to extract attributes for fragment shaders
-// simillar to VExtAttrib
-struct FExtAttrib {
-    inline FExtAttrib(const AttributeType *types);
-    inline void set_attrib(Attribute *out_attribs, glm::vec3 pbc) const;
-    inline void set_arrs(const OutVertex *vout);
-
-    // copied attributes
-    size_t ind[maxAttributes];
-    size_t siz[maxAttributes];
-    const uint32_t *arr[maxAttributes];
-    size_t cnt;
-
-    // interpolated attributes
-    size_t iind[maxAttributes];
-    size_t isiz[maxAttributes];
-    const float *iarr[3][maxAttributes];
-    size_t icnt;
-};
-
 // contains the points of the triangle and its precalculated edges
 struct Triangle {
     inline Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c);
@@ -54,6 +34,8 @@ struct Triangle {
     inline void to_viewport(size_t width, size_t height);
     // the area and side vectors are precomputed optionally
     inline float get_area();
+    inline glm::vec4 &operator[](size_t ind);
+    inline const glm::vec4 &operator[](size_t ind) const;
 
     // points of the triangle
     glm::vec4 a;
@@ -72,11 +54,32 @@ struct Triangle {
     float area;
 };
 
+// used to extract attributes for fragment shaders
+// simillar to VExtAttrib
+struct FExtAttrib {
+    inline FExtAttrib(const AttributeType *types);
+    inline void set_attrib(Attribute *out_attribs, glm::vec3 pbc) const;
+    inline void set_arrs(OutVertex *vout);
+    // lieary interpolates mi and pi into mi
+    inline void linear_clip(size_t mi, size_t pi, Triangle &t);
+
+    // copied attributes
+    size_t ind[maxAttributes];
+    size_t siz[maxAttributes];
+    const uint32_t *arr[maxAttributes];
+    size_t cnt;
+
+    // interpolated attributes
+    size_t iind[maxAttributes];
+    size_t isiz[maxAttributes];
+    float *iarr[3][maxAttributes];
+    size_t icnt;
+};
+
 // used for rasterizing triangles
 struct Rasterizer {
     inline Rasterizer(
         const Triangle &t,
-        const OutVertex *vert,
         Frame &frame,
         const Program &prog,
         const ShaderInterface &si,
@@ -112,8 +115,6 @@ struct Rasterizer {
 
     // tirangle to draw
     const Triangle &t;
-    // the results of vertex shader
-    const OutVertex *vert;
     // the shader program
     const Program &prog;
     // the constants for shader
@@ -180,7 +181,6 @@ static inline void gpu_draw(
 static inline void rasterize(
     Frame &frame,
     Triangle t,
-    const OutVertex *vert,
     const Program &prog,
     const ShaderInterface &si,
     FExtAttrib &fat
@@ -193,11 +193,13 @@ static inline glm::vec4 from_rgba(const uint32_t color);
 static inline void clip_near_and_rasterize(
     Frame &frame,
     Triangle t,
-    const OutVertex *vert,
+    OutVertex *vert,
     const Program &prog,
     const ShaderInterface &si,
     FExtAttrib &fat
 );
+
+static inline glm::vec4 get_near_clip(glm::vec4 a, glm::vec4 b);
 
 //! [gpu_execute]
 void gpu_execute(GPUMemory &mem, CommandBuffer &cb) {
@@ -330,11 +332,6 @@ static void gpu_draw(
             // run the vertex shader
             vat.set_attrib(in_vertex.gl_VertexID, in_vertex.attributes);
             prog.vertexShader(triangle[2 - j], in_vertex, si);
-
-            // perspective division
-            triangle[2 - j].gl_Position.x /= triangle[2 - j].gl_Position.w;
-            triangle[2 - j].gl_Position.y /= triangle[2 - j].gl_Position.w;
-            triangle[2 - j].gl_Position.z /= triangle[2 - j].gl_Position.w;
         }
 
         Triangle t{
@@ -385,13 +382,9 @@ inline void VExtAttrib::set_attrib(size_t index, Attribute *out_attribs) const {
     }
 }
 
-// TODO: optimize (
-//   make the code readable
-// )
 static inline void rasterize(
     Frame &frame,
     Triangle t,
-    const OutVertex *vert,
     const Program &prog,
     const ShaderInterface &si,
     FExtAttrib &fat
@@ -400,7 +393,7 @@ static inline void rasterize(
 
     // prepare for rasterization
     bool failed;
-    Rasterizer fc{ t, vert, frame, prog, si, fat, failed };
+    Rasterizer fc{ t, frame, prog, si, fat, failed };
 
     if (failed)
         return;
@@ -685,10 +678,48 @@ static inline glm::vec4 from_rgba(const uint32_t color) {
 
 inline Triangle::Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c)
 : a(a), b(b), c(c) {
-    ab = glm::vec2{ b.x - a.x, b.y - a.y };
-    bc = glm::vec2{ c.x - b.x, c.y - b.y };
-    ca = glm::vec2{ a.x - c.x, a.y - c.y };
+    get_area();
+}
 
+inline void Triangle::to_viewport(size_t width, size_t height) {
+    // transform division to multiplication
+    a.w = 1 / a.w;
+    b.w = 1 / b.w;
+    c.w = 1 / c.w;
+
+    // perspective division
+    a.x *= a.w;
+    a.y *= a.w;
+    a.z *= a.w;
+    b.x *= b.w;
+    b.y *= b.w;
+    b.z *= b.w;
+    c.x *= c.w;
+    c.y *= c.w;
+    c.z *= c.w;
+
+    float xm = width / 2.f;
+    float ym = height / 2.f;
+
+    // transform x and y
+    a.x = (a.x + 1) * xm;
+    a.y = (a.y + 1) * ym;
+    b.x = (b.x + 1) * xm;
+    b.y = (b.y + 1) * ym;
+    c.x = (c.x + 1) * xm;
+    c.y = (c.y + 1) * ym;
+
+    // update the sides
+    float am = 1 / get_area();
+
+    // transform the sides so that when calculating the value of the triangle
+    // side equations, it is equal to the barycentric coordinates
+    ab *= am;
+    bc *= am;
+    ca *= am;
+}
+
+inline float Triangle::get_area() {
     /* This is derived from the fact that the area of parallelogram is:
      *     A_________D
      *     /        /
@@ -723,37 +754,7 @@ inline Triangle::Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c)
      * The cool part is that if we don't calculate the absolute value, the sign
      * tells us whether the triangle is backface or not
      */
-    area = ab.x * bc.y - ab.y * bc.x;
-}
 
-inline void Triangle::to_viewport(size_t width, size_t height) {
-    float xm = width / 2.f;
-    float ym = height / 2.f;
-
-    // transform x and y
-    a.x = (a.x + 1) * xm;
-    a.y = (a.y + 1) * ym;
-    b.x = (b.x + 1) * xm;
-    b.y = (b.y + 1) * ym;
-    c.x = (c.x + 1) * xm;
-    c.y = (c.y + 1) * ym;
-
-    // update the sides
-    float am = 1 / get_area();
-
-    // transform the sides so that when calculating the value of the triangle
-    // side equations, it is equal to the barycentric coordinates
-    ab *= am;
-    bc *= am;
-    ca *= am;
-
-    // transform division to multiplication
-    a.w = 1 / a.w;
-    b.w = 1 / b.w;
-    c.w = 1 / c.w;
-}
-
-inline float Triangle::get_area() {
     ab.x = b.x - a.x;
     ab.y = b.y - a.y;
     bc.x = c.x - b.x;
@@ -765,9 +766,17 @@ inline float Triangle::get_area() {
     return area = ab.x * bc.y - ab.y * bc.x;
 }
 
+inline glm::vec4 &Triangle::operator[](size_t ind) {
+    return reinterpret_cast<glm::vec4*>(this)[ind];
+}
+
+
+inline const glm::vec4 &Triangle::operator[](size_t ind) const {
+    return reinterpret_cast<const glm::vec4*>(this)[ind];
+}
+
 inline Rasterizer::Rasterizer(
     const Triangle &t,
-    const OutVertex *vert,
     Frame &frame,
     const Program &prog,
     const ShaderInterface &si,
@@ -775,7 +784,6 @@ inline Rasterizer::Rasterizer(
     bool &failed
 ) : t(t),
     prog(prog),
-    vert(vert),
     color(reinterpret_cast<uint32_t *>(frame.color)),
     si(si),
     frame(frame),
@@ -804,8 +812,6 @@ inline Rasterizer::Rasterizer(
     //this->tr.x = std::ceil(tr.x);
     //this->tr.y = std::ceil(tr.y);
     px = bl;
-
-    fat.set_arrs(vert);
 
     // evaluate at initial (bottom left) position
     eval_at(this->bl.x + .5f, this->bl.y + .5f);
@@ -998,7 +1004,7 @@ inline FExtAttrib::FExtAttrib(const AttributeType *types)
     }
 }
 
-inline void FExtAttrib::set_arrs(const OutVertex *vout) {
+inline void FExtAttrib::set_arrs(OutVertex *vout) {
     // non interpolated
     for (size_t i = 0; i < cnt; ++i)
         arr[i] = reinterpret_cast<const uint32_t *>(vout->attributes + ind[i]);
@@ -1006,11 +1012,11 @@ inline void FExtAttrib::set_arrs(const OutVertex *vout) {
     // interpolated
     for (size_t i = 0; i < icnt; ++i) {
         iarr[0][i] =
-            reinterpret_cast<const float *>(vout[0].attributes + iind[i]);
+            reinterpret_cast<float *>(vout[0].attributes + iind[i]);
         iarr[1][i] =
-            reinterpret_cast<const float *>(vout[1].attributes + iind[i]);
+            reinterpret_cast<float *>(vout[1].attributes + iind[i]);
         iarr[2][i] =
-            reinterpret_cast<const float *>(vout[2].attributes + iind[i]);
+            reinterpret_cast<float *>(vout[2].attributes + iind[i]);
     }
 }
 
@@ -1038,47 +1044,83 @@ inline void FExtAttrib::set_attrib(
     }
 }
 
+inline void FExtAttrib::linear_clip(size_t a, size_t b, Triangle &t) {
+    float s = (t[a].w + t[a].z) / (t[a].w - t[b].w + t[a].z - t[b].z);
+
+    for (size_t i = 0; i < icnt; ++i) {
+        for (size_t j = 0; j < isiz[i]; ++j) {
+            iarr[a][i][j] =
+                iarr[a][i][j] + s * (iarr[b][i][j] - iarr[a][i][j]);
+        }
+    }
+
+    //t[a].x = t[a].x + s * (t[b].x - t[a].x);
+    //t[a].y = t[a].y + s * (t[b].y - t[a].y);
+    //t[a].z = t[a].z + s * (t[b].z - t[a].z);
+    t[a] = t[a] + s * (t[b] - t[a]);
+}
+
 static inline void clip_near_and_rasterize(
     Frame &frame,
     Triangle t,
-    const OutVertex *vert,
+    OutVertex *vert,
     const Program &prog,
     const ShaderInterface &si,
     FExtAttrib &fat
 ) {
-    glm::vec4 pts[] = { t.a, t.b, t.c };
-    size_t pc = 0;
-    glm::vec4 clp[3];
-    size_t cc = 0;
+    // in front of camera
+    size_t f[3];
+    size_t fc = 0;
+    // behind camera
+    size_t b[3];
+    size_t bc = 0;
 
     // get clipped and unclipped triangles
     for (size_t i = 0; i < 3; ++i) {
-        if (   -pts[i].w <= pts[i].x <= pts[i].w
-            && -pts[i].w <= pts[i].y <= pts[i].w
-            && -pts[i].w <= pts[i].z <= pts[i].w
+        if (   -t[i].w <= t[i].x && t[i].x <= t[i].w
+            && -t[i].w <= t[i].y && t[i].y <= t[i].w
+            && -t[i].w <= t[i].z && t[i].z <= t[i].w
         ) {
-            pts[pc++] = pts[i];
+            f[fc++] = i;
             continue;
         }
 
-        clp[cc++] = pts[i];
+        b[bc++] = i;
     }
 
-    switch (cc) {
-    case 0: // triangle is not clipped
-        rasterize(frame, t, vert, prog, si, fat);
+    switch (bc) {
+    case 0: // triangle is in front of camera
+        fat.set_arrs(vert);
+        rasterize(frame, t, prog, si, fat);
         return;
     case 1: { // one point is outside
-        // TODO
+        OutVertex vcpy[] = { vert[0], vert[1], vert[2] };
+        Triangle tcpy = t;
+
+        fat.set_arrs(vcpy);
+        fat.linear_clip(f[0], b[0], tcpy);
+        fat.linear_clip(b[0], f[1], tcpy);
+        rasterize(frame, tcpy, prog, si, fat);
+
+        fat.set_arrs(vert);
+        fat.linear_clip(b[0], f[0], t);
+        rasterize(frame, t, prog, si, fat);
     }
         return;
-    case 2: { // two points are outside
-        // TODO
-    }
+    case 2: // two points are outside
+        fat.set_arrs(vert);
+        fat.linear_clip(b[0], f[0], t);
+        fat.linear_clip(b[1], f[0], t);
+        rasterize(frame, t, prog, si, fat);
         return;
     case 3: // triangle is behind the camera
         return;
     }
+}
+
+static inline glm::vec4 get_near_clip(glm::vec4 a, glm::vec4 b) {
+    float t = (a.w + a.z) / (b.w - a.w + b.z - a.z);
+    return a - t * (b - a);
 }
 
 /**

@@ -3,6 +3,10 @@
         "*.html": "html",
         "*.h": "c",
         "*.d": "makefile",
-        "cstddef": "cpp"
+        "cstddef": "cpp",
+        "compare": "cpp",
+        "random": "cpp",
+        "functional": "cpp",
+        "type_traits": "cpp"
     }
 }
