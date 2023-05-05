@@ -188,6 +188,8 @@ static inline void rasterize(
 
 static inline uint32_t to_rgba(glm::vec4 color);
 
+static inline glm::vec4 from_rgba(const uint32_t color);
+
 //! [gpu_execute]
 void gpu_execute(GPUMemory &mem, CommandBuffer &cb) {
     uint32_t draw_id = UINT32_MAX;
@@ -634,6 +636,16 @@ static inline uint32_t to_rgba(const glm::vec4 color) {
     return *reinterpret_cast<const uint32_t *>(comp);
 }
 
+static inline glm::vec4 from_rgba(const uint32_t color) {
+    const uint8_t *comp = reinterpret_cast<const uint8_t *>(&color);
+    return glm::vec4{
+        comp[0] / 255.f,
+        comp[1] / 255.f,
+        comp[2] / 255.f,
+        comp[3] / 255.f,
+    };
+}
+
 /* (backface = clockwise, frontface = counterclockwise)
  * The triangle explained:
  *   A_
@@ -875,7 +887,8 @@ inline void Rasterizer::draw() {
 
     if (frame.depth[p] > in.gl_FragCoord.z) {
         frame.depth[p] = in.gl_FragCoord.z;
-        color[p] = to_rgba(out.gl_FragColor);
+        color[p] = to_rgba(from_rgba(color[p]) * (1 - out.gl_FragColor.a)
+            + out.gl_FragColor * out.gl_FragColor.a);
     }
 }
 
