@@ -620,6 +620,7 @@ static inline void rasterize(
             // ----****----
         }
     } while (fc.move_up());
+#undef fc_move_up
 }
 
 static inline uint32_t to_rgba(const glm::vec4 color) {
