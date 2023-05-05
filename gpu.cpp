@@ -886,7 +886,8 @@ inline void Rasterizer::draw() {
     size_t p = px.y * frame.width + px.x;
 
     if (frame.depth[p] > in.gl_FragCoord.z) {
-        frame.depth[p] = in.gl_FragCoord.z;
+        if (out.gl_FragColor.a > .5f)
+            frame.depth[p] = in.gl_FragCoord.z;
         color[p] = to_rgba(from_rgba(color[p]) * (1 - out.gl_FragColor.a)
             + out.gl_FragColor * out.gl_FragColor.a);
     }
