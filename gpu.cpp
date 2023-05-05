@@ -62,6 +62,13 @@ struct FExtAttrib {
     inline void set_arrs(OutVertex *vout);
     // lieary interpolates mi and pi into mi
     inline void linear_clip(size_t mi, size_t pi, Triangle &t);
+    inline void linear_clip(
+        size_t mi,
+        size_t pi,
+        Triangle &t,
+        OutVertex *reva,
+        Triangle &revt
+    );
 
     // copied attributes
     size_t ind[maxAttributes];
@@ -1054,10 +1061,29 @@ inline void FExtAttrib::linear_clip(size_t a, size_t b, Triangle &t) {
         }
     }
 
-    //t[a].x = t[a].x + s * (t[b].x - t[a].x);
-    //t[a].y = t[a].y + s * (t[b].y - t[a].y);
-    //t[a].z = t[a].z + s * (t[b].z - t[a].z);
     t[a] = t[a] + s * (t[b] - t[a]);
+}
+
+inline void FExtAttrib::linear_clip(
+    size_t a,
+    size_t b,
+    Triangle &t,
+    OutVertex *reva,
+    Triangle &revt
+) {
+    float s = (t[a].w + t[a].z) / (t[a].w - t[b].w + t[a].z - t[b].z);
+
+    for (size_t i = 0; i < icnt; ++i) {
+        for (size_t j = 0; j < isiz[i]; ++j) {
+            iarr[a][i][j] =
+                iarr[a][i][j] + s * (iarr[b][i][j] - iarr[a][i][j]);
+            reva[iind[i]].attributes[i].v4[j] =
+                iarr[a][i][j] + s * (iarr[b][i][j] - iarr[a][i][j]);
+        }
+    }
+
+    t[a] = t[a] + s * (t[b] - t[a]);
+    revt[b] = revt[a] + s * (revt[b] - revt[a]);
 }
 
 static inline void clip_near_and_rasterize(
@@ -1095,12 +1121,11 @@ static inline void clip_near_and_rasterize(
         Triangle tcpy = t;
 
         fat.set_arrs(vcpy);
-        fat.linear_clip(f[0], b[0], tcpy);
+        fat.linear_clip(f[0], b[0], tcpy, vert, t);
         fat.linear_clip(b[0], f[1], tcpy);
         rasterize(frame, tcpy, prog, si, fat);
 
         fat.set_arrs(vert);
-        fat.linear_clip(b[0], f[0], t);
         rasterize(frame, t, prog, si, fat);
     }
         return;
