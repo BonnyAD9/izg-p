@@ -17,14 +17,18 @@
  * @param model model structure
  */
 //! [drawModel]
-void prepareModel(GPUMemory&mem,CommandBuffer&commandBuffer,Model const&model){
-  (void)mem;
-  (void)commandBuffer;
-  (void)model;
-  /// \todo Tato funkce připraví command buffer pro model a nastaví správně pamět grafické karty.<br>
-  /// Vaším úkolem je správně projít model a vložit vykreslovací příkazy do commandBufferu.
-  /// Zároveň musíte vložit do paměti textury, buffery a uniformní proměnné, které buffer command buffer využívat.
-  /// Bližší informace jsou uvedeny na hlavní stránce dokumentace a v testech.
+void prepareModel(
+    GPUMemory &mem,
+    CommandBuffer &commandBuffer,
+    Model const &model
+) {
+    (void)mem;
+    (void)commandBuffer;
+    (void)model;
+    /// \todo Tato funkce připraví command buffer pro model a nastaví správně pamět grafické karty.<br>
+    /// Vaším úkolem je správně projít model a vložit vykreslovací příkazy do commandBufferu.
+    /// Zároveň musíte vložit do paměti textury, buffery a uniformní proměnné, které buffer command buffer využívat.
+    /// Bližší informace jsou uvedeny na hlavní stránce dokumentace a v testech.
 }
 //! [drawModel]
 
@@ -36,13 +40,17 @@ void prepareModel(GPUMemory&mem,CommandBuffer&commandBuffer,Model const&model){
  * @param si shader interface
  */
 //! [drawModel_vs]
-void drawModel_vertexShader(OutVertex&outVertex,InVertex const&inVertex,ShaderInterface const&si){
-  (void)outVertex;
-  (void)inVertex;
-  (void)si;
-  /// \todo Tato funkce reprezentujte vertex shader.<br>
-  /// Vaším úkolem je správně trasnformovat vrcholy modelu.
-  /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
+void drawModel_vertexShader(
+    OutVertex &outVertex,
+    InVertex const &inVertex,
+    ShaderInterface const &si
+) {
+    (void)outVertex;
+    (void)inVertex;
+    (void)si;
+    /// \todo Tato funkce reprezentujte vertex shader.<br>
+    /// Vaším úkolem je správně trasnformovat vrcholy modelu.
+    /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
 }
 //! [drawModel_vs]
 
@@ -54,13 +62,17 @@ void drawModel_vertexShader(OutVertex&outVertex,InVertex const&inVertex,ShaderIn
  * @param si shader interface
  */
 //! [drawModel_fs]
-void drawModel_fragmentShader(OutFragment&outFragment,InFragment const&inFragment,ShaderInterface const&si){
-  (void)outFragment;
-  (void)inFragment;
-  (void)si;
-  /// \todo Tato funkce reprezentujte fragment shader.<br>
-  /// Vaším úkolem je správně obarvit fragmenty a osvětlit je pomocí lambertova osvětlovacího modelu.
-  /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
+void drawModel_fragmentShader(
+    OutFragment &outFragment,
+    InFragment const &inFragment,
+    ShaderInterface const &si
+) {
+    (void)outFragment;
+    (void)inFragment;
+    (void)si;
+    /// \todo Tato funkce reprezentujte fragment shader.<br>
+    /// Vaším úkolem je správně obarvit fragmenty a osvětlit je pomocí lambertova osvětlovacího modelu.
+    /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
 }
 //! [drawModel_fs]
 
