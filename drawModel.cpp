@@ -89,6 +89,26 @@ void drawModel_vertexShader(
     /// \todo Tato funkce reprezentujte vertex shader.<br>
     /// Vaším úkolem je správně trasnformovat vrcholy modelu.
     /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
+
+    // extract attributes
+    const glm::vec3 &pos = inVertex.attributes->v3;
+    const glm::vec3 &norm = inVertex.attributes[1].v3;
+    const glm::vec2 &tex = inVertex.attributes[2].v2;
+
+    // extract uniforms
+    const glm::mat4 &view = si.uniforms->m4;
+    const glm::mat4 &model = si.uniforms[5 * inVertex.gl_DrawID + 10].m4;
+    const glm::mat4 &itmod = si.uniforms[5 * inVertex.gl_DrawID + 11].m4;
+
+    // set position
+    auto mpos = model * glm::vec4(pos, 1.f);
+    outVertex.gl_Position = view * mpos;
+
+    // set attributes
+    outVertex.attributes->v3 = mpos;
+    outVertex.attributes[1].v3 = itmod * glm::vec4(norm, 0.f);
+    outVertex.attributes[2].v2 = tex;
+    outVertex.attributes[3].u1 = inVertex.gl_DrawID;
 }
 //! [drawModel_vs]
 
