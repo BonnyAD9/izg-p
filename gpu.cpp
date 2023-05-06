@@ -1121,11 +1121,12 @@ static inline void clip_near_and_rasterize(
         Triangle tcpy = t;
 
         fat.set_arrs(vcpy);
-        fat.linear_clip(f[0], b[0], tcpy, vert, t);
+        fat.linear_clip(f[0], b[0], tcpy);
         fat.linear_clip(b[0], f[1], tcpy);
         rasterize(frame, tcpy, prog, si, fat);
 
         fat.set_arrs(vert);
+        fat.linear_clip(b[0], f[0], t);
         rasterize(frame, t, prog, si, fat);
     }
         return;
