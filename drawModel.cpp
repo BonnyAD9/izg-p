@@ -132,6 +132,26 @@ void drawModel_fragmentShader(
     /// Vaším úkolem je správně obarvit fragmenty a osvětlit je pomocí
     /// lambertova osvětlovacího modelu.
     /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
+
+    // extract the attributes
+    const glm::vec3 &pos = inFragment.attributes->v3;
+    const glm::vec3 &norm = inFragment.attributes[1].v3;
+    const glm::vec2 &tex = inFragment.attributes[2].v2;
+    uint32_t draw_id = inFragment.attributes[3].u1;
+
+    // extract uniforms
+    const glm::vec3 &lpos = si.uniforms[1].v3;
+    const glm::vec3 &cpos = si.uniforms[2].v3;
+    const glm::vec4 &dcol = si.uniforms[5 * draw_id + 12].v4;
+    int32_t tex_id = si.uniforms[5 * draw_id + 13].i1;
+    bool ds = si.uniforms[5 * draw_id + 14].v1 != 0;
+
+    // normalize the mormal
+    auto nor = glm::normalize(norm);
+
+    auto col = tex_id >= 0 ? read_texture(si.textures[tex_id], tex) : dcol;
+
+    outFragment.gl_FragColor = col;
 }
 //! [drawModel_fs]
 void prepare_nodes(
@@ -155,7 +175,6 @@ void prepare_nodes(
             mats.pop_back();
         }
 
-        ++id;
         const Node node = std::move(nodes.back());
         nodes.pop_back();
 
@@ -168,6 +187,7 @@ void prepare_nodes(
         }
 
         if (node.mesh >= 0) {
+            ++id;
             const Mesh &mesh = model.meshes[node.mesh];
             static size_t cnt = 0;
 
