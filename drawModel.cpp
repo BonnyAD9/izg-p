@@ -135,7 +135,7 @@ void drawModel_fragmentShader(
 
     // extract the attributes
     const glm::vec3 &pos = inFragment.attributes->v3;
-    const glm::vec3 &norm = inFragment.attributes[1].v3;
+    glm::vec3 norm = inFragment.attributes[1].v3;
     const glm::vec2 &tex = inFragment.attributes[2].v2;
     uint32_t draw_id = inFragment.attributes[3].u1;
 
@@ -151,7 +151,16 @@ void drawModel_fragmentShader(
 
     auto col = tex_id >= 0 ? read_texture(si.textures[tex_id], tex) : dcol;
 
-    outFragment.gl_FragColor = col;
+    if (ds && glm::dot(nor, pos - cpos) > 0)
+        nor = -nor;
+
+    glm::vec3 col3 = col;
+
+    outFragment.gl_FragColor = glm::vec4(glm::clamp(
+        glm::dot(glm::normalize(lpos - pos), nor),
+        0.f,
+        1.f
+    ) * col3 + col3 * .2f, col.a);
 }
 //! [drawModel_fs]
 void prepare_nodes(
