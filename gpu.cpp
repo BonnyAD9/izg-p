@@ -702,9 +702,7 @@ static inline glm::vec4 from_rgba(const uint32_t color) {
  */
 
 inline Triangle::Triangle(glm::vec4 a, glm::vec4 b, glm::vec4 c)
-: a(a), b(b), c(c) {
-    get_area();
-}
+: a(a), b(b), c(c) {}
 
 inline void Triangle::to_viewport(size_t width, size_t height) {
     // transform division to multiplication
@@ -938,6 +936,7 @@ inline void Rasterizer::draw() {
 
     if (out.gl_FragColor.a > .5f)
         frame.depth[p] = in.gl_FragCoord.z;
+
     color[p] = to_rgba(
         from_rgba(color[p]) * (1 - out.gl_FragColor.a)
         + out.gl_FragColor * out.gl_FragColor.a
