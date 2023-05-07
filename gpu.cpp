@@ -34,6 +34,7 @@ struct Triangle {
     inline void to_viewport(size_t width, size_t height);
     // the area and side vectors are precomputed optionally
     inline float get_area();
+    inline bool is_backface() const;
     inline glm::vec4 &operator[](size_t ind);
     inline const glm::vec4 &operator[](size_t ind) const;
 
@@ -350,7 +351,7 @@ static void gpu_draw(
         // skip backface triangles if culling is enabled
         if constexpr(flags & DRAW_CULLING) {
             // area is negative when backface
-            if (t.get_area() <= 0)
+            if (t.is_backface())
                 continue;
         }
 
@@ -439,6 +440,23 @@ static inline void rasterize(
     // +   current filled position
     // /   current empty position
     // .   current unknown position
+    /*do {
+        if (fc.should_draw() || fc.skip_right()) {
+            fc.draw();
+            if (fc.draw_right())
+                fc.skip_right();
+        }
+
+        if (!fc.move_up())
+            return;
+
+        if (fc.should_draw() || fc.skip_left()) {
+            fc.draw();
+            if (fc.draw_left())
+                fc.skip_left();
+        }
+    } while (fc.move_up());*/
+
 #define fc_move_up() if (!fc.move_up()) return;
     // this first part is for finding the triangle
     do {
@@ -773,6 +791,14 @@ inline float Triangle::get_area() {
     return area = ab.x * bc.y - ab.y * bc.x;
 }
 
+inline bool Triangle::is_backface() const {
+    float abx = b.x / b.w - a.x / a.w;
+    float aby = b.y / b.w - a.y / a.w;
+    float bcx = c.x / c.w - b.x / b.w;
+    float bcy = c.y / c.w - b.y / b.w;
+    return abx * bcy < aby * bcx;
+}
+
 inline glm::vec4 &Triangle::operator[](size_t ind) {
     return reinterpret_cast<glm::vec4*>(this)[ind];
 }
@@ -896,6 +922,10 @@ inline void Rasterizer::draw() {
         },
     };
 
+    size_t p = px.y * frame.width + px.x;
+    if (frame.depth[p] <= in.gl_FragCoord.z)
+        return;
+
     // get perspective adjusted coordinates
     float s = 1 / (bcv * t.a.w + cav * t.b.w + abv * t.c.w);
     glm::vec3 pbc{ bcv * t.a.w * s, cav * t.b.w * s, abv * t.c.w * s };
@@ -905,14 +935,13 @@ inline void Rasterizer::draw() {
     // call the shader
     OutFragment out;
     prog.fragmentShader(out, in, si);
-    size_t p = px.y * frame.width + px.x;
 
-    if (frame.depth[p] > in.gl_FragCoord.z) {
-        if (out.gl_FragColor.a > .5f)
-            frame.depth[p] = in.gl_FragCoord.z;
-        color[p] = to_rgba(from_rgba(color[p]) * (1 - out.gl_FragColor.a)
-            + out.gl_FragColor * out.gl_FragColor.a);
-    }
+    if (out.gl_FragColor.a > .5f)
+        frame.depth[p] = in.gl_FragCoord.z;
+    color[p] = to_rgba(
+        from_rgba(color[p]) * (1 - out.gl_FragColor.a)
+        + out.gl_FragColor * out.gl_FragColor.a
+    );
 }
 
 inline bool Rasterizer::should_draw() const {
