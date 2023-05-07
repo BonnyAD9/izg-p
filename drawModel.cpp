@@ -157,10 +157,11 @@ void drawModel_fragmentShader(
     glm::vec3 col3 = col;
 
     outFragment.gl_FragColor = glm::vec4(glm::clamp(
-        glm::dot(glm::normalize(lpos - pos), nor),
+        glm::dot(glm::normalize(lpos - pos), nor) + .2f,
         0.f,
         1.f
-    ) * col3 + col3 * .2f, col.a);
+    ) * col3, col.a);
+    //outFragment.gl_FragColor = col;
 }
 //! [drawModel_fs]
 void prepare_nodes(
