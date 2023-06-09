@@ -29,6 +29,11 @@ void prepare_nodes(
     Model const &model
 );
 
+static inline glm::vec4 read_texture_inline(
+    Texture const &texture,
+    glm::vec2 uv
+);
+
 /**
  * @brief This function prepares model into memory and creates command buffer
  *
@@ -42,18 +47,6 @@ void prepareModel(
     CommandBuffer &commandBuffer,
     Model const &model
 ) {
-    (void)mem;
-    (void)commandBuffer;
-    (void)model;
-    /// \todo Tato funkce připraví command buffer pro model a nastaví správně
-    /// pamět grafické karty.<br>
-    /// Vaším úkolem je správně projít model a vložit vykreslovací příkazy do
-    /// commandBufferu.
-    /// Zároveň musíte vložit do paměti textury, buffery a uniformní proměnné,
-    /// které buffer command buffer využívat.
-    /// Bližší informace jsou uvedeny na hlavní stránce dokumentace a v
-    /// testech.
-
     // set the memory
     std::copy(model.buffers.begin(), model.buffers.end(), mem.buffers);
     mem.programs->fragmentShader = drawModel_fragmentShader;
@@ -83,13 +76,6 @@ void drawModel_vertexShader(
     InVertex const &inVertex,
     ShaderInterface const &si
 ) {
-    (void)outVertex;
-    (void)inVertex;
-    (void)si;
-    /// \todo Tato funkce reprezentujte vertex shader.<br>
-    /// Vaším úkolem je správně trasnformovat vrcholy modelu.
-    /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
-
     // extract attributes
     const glm::vec3 &pos = inVertex.attributes->v3;
     const glm::vec3 &norm = inVertex.attributes[1].v3;
@@ -125,14 +111,6 @@ void drawModel_fragmentShader(
     InFragment const &inFragment,
     ShaderInterface const &si
 ) {
-    (void)outFragment;
-    (void)inFragment;
-    (void)si;
-    /// \todo Tato funkce reprezentujte fragment shader.<br>
-    /// Vaším úkolem je správně obarvit fragmenty a osvětlit je pomocí
-    /// lambertova osvětlovacího modelu.
-    /// Bližší informace jsou uvedeny na hlavní stránce dokumentace.
-
     // extract the attributes
     const glm::vec3 &pos = inFragment.attributes->v3;
     glm::vec3 norm = inFragment.attributes[1].v3;
@@ -149,19 +127,20 @@ void drawModel_fragmentShader(
     // normalize the mormal
     auto nor = glm::normalize(norm);
 
-    auto col = tex_id >= 0 ? read_texture(si.textures[tex_id], tex) : dcol;
+    auto col = tex_id >= 0
+        ? read_texture_inline(si.textures[tex_id], tex)
+        : dcol;
 
     if (ds && glm::dot(nor, pos - cpos) > 0)
         nor = -nor;
 
     glm::vec3 col3 = col;
 
-    outFragment.gl_FragColor = glm::vec4(glm::clamp(
-        glm::dot(glm::normalize(lpos - pos), nor) + .2f,
+    outFragment.gl_FragColor = glm::vec4((glm::clamp(
+        glm::dot(glm::normalize(lpos - pos), nor),
         0.f,
         1.f
-    ) * col3, col.a);
-    //outFragment.gl_FragColor = col;
+    ) + .2f) * col3, col.a);
 }
 //! [drawModel_fs]
 void prepare_nodes(
@@ -234,3 +213,34 @@ void prepare_nodes(
     }
 }
 
+static inline glm::vec4 read_texture_inline(
+    Texture const &texture,
+    glm::vec2 uv
+) {
+    // the inline version is much faster
+
+    if (!texture.data)
+        return glm::vec4(0.f);
+
+    size_t x = (uv.x - std::floor(uv.x)) * (texture.width - 1) + .5f;
+    size_t y = (uv.y - std::floor(uv.y)) * (texture.height - 1) + .5f;
+    glm::vec4 color{ 0.f, 0.f, 0.f, 1.f };
+
+    const uint8_t *tex =
+        texture.data + (y * texture.width + x) * texture.channels;
+
+    switch (texture.channels) {
+    case 4:
+        color.a = tex[3] / 255.f;
+    case 3:
+        color.b = tex[2] / 255.f;
+    case 2:
+        color.g = tex[1] / 255.f;
+    case 1:
+        color.r = *tex / 255.f;
+    default:
+        break;
+    }
+
+    return color;
+}
